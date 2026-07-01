@@ -186,8 +186,8 @@
     display: flex; align-items: center; justify-content: center;
     margin: 34px 0 10px; padding: 4px;
   }
-  .bird-card .img-wrap svg {
-    max-width: 100%; height: 120px; display: block;
+  .bird-card .img-wrap svg, .bird-card .img-wrap img {
+    max-width: 100%; height: 130px; display: block; object-fit: contain;
     filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
   }
   .bird-card h3 {
@@ -581,21 +581,36 @@ const SPECIES = [
     pal: { body: '#4a7fb5', wing: '#2d5a8a', beak: '#241813', crest: true, belly: '#e8e4da' },
     det: [1.9, 4.5, 9, 25, 30, 49, 75, 96, 122] },
   { c: 'House Finch', s: 'Haemorhous mexicanus', conf: 68, photo: true, fresh: false,
+    img: 'haemorhous-mexicanus.png',
     pal: { body: '#9a8f7f', wing: '#6e6353', beak: '#5a4f42', head: '#a34a35' },
     det: [2.4, 6, 11, 27, 52, 78, 100] },
   { c: 'American Goldfinch', s: 'Spinus tristis', conf: 95, photo: true, fresh: false,
+    img: 'spinus-tristis.png',
     pal: { body: '#d9a72e', wing: '#2c2825', beak: '#c47a1f' },
     det: [4.2, 10, 28, 55, 79] },
   { c: 'Mourning Dove', s: 'Zenaida macroura', conf: 90, photo: true, fresh: false,
+    img: 'zenaida-macroura.png',
     pal: { body: '#a89a88', wing: '#8a7d6c', beak: '#4a3f31' },
     det: [6.5, 12, 31, 56] },
   { c: 'Tufted Titmouse', s: 'Baeolophus bicolor', conf: 84, photo: false, fresh: false,
     pal: { body: '#a8a29a', wing: '#8a847c', beak: '#4a4540', crest: true, belly: '#e0dbd2' },
     det: [9.5, 33] },
   { c: 'Dark-eyed Junco', s: 'Junco hyemalis', conf: 55, photo: true, fresh: true,
+    img: 'junco-hyemalis.png',
     pal: { body: '#4a4540', wing: '#38332e', beak: '#d0b8a0', belly: '#ece8e1' },
     det: [16.4] },
 ];
+
+/* Bundled illustration cutouts (CC BY-NC-SA 4.0, from AvianVisitors —
+   see ../assets/illustrations/LICENSE.md). Keyed by kebab-case
+   scientific name; species without a file fall back to the built-in
+   SVG silhouette below. */
+const ILLO_DIR = '../assets/illustrations/';
+function birdArt(sp) {
+  return sp.img
+    ? `<img src="${ILLO_DIR}${sp.img}" alt="" loading="lazy">`
+    : birdSvg(sp.pal);
+}
 
 /* One shared perched-cutout silhouette; per-species palette fills it.
    Transparent background so the cutout sits on paper, like the
@@ -647,7 +662,7 @@ function renderGallery() {
       return `<article class="bird-card">
         <div class="stat"><span class="n">${n}</span>visit${n === 1 ? '' : 's'}<span class="lbl">last ${fmtTime(last)}</span></div>
         ${sp.fresh ? '<span class="new-badge">new</span>' : ''}
-        <div class="img-wrap">${birdSvg(sp.pal)}</div>
+        <div class="img-wrap">${birdArt(sp)}</div>
         <h3>${sp.c}</h3>
         <p class="sci">${sp.s}</p>
         <div class="actions">${conf}${illo}</div>
