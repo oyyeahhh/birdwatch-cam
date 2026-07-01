@@ -909,9 +909,9 @@ function birdSvg(p) {
     <line x1="59" y1="57" x2="59" y2="66" stroke="#5a5148" stroke-width="1.6"/>
   </svg>`;
 }
-function birdArt(sp, alt) {
+function birdArt(sp, alt, eager) {
   return sp.img
-    ? `<img src="${ILLO_DIR}${sp.img}" alt="${alt || ''}" loading="lazy" decoding="async">`
+    ? `<img src="${ILLO_DIR}${sp.img}" alt="${alt || ''}" loading="${eager ? 'eager' : 'lazy'}" decoding="async">`
     : birdSvg(sp.pal);
 }
 
@@ -1090,7 +1090,7 @@ function renderCollage(animate) {
     btn.style.top = t.y + 'px';
     btn.style.width = t.w + 'px';
     btn.style.height = t.h + 'px';
-    btn.innerHTML = birdArt(t.s, t.s.com);
+    btn.innerHTML = birdArt(t.s, t.s.com, true);
     btn.addEventListener('mouseenter', () => {
       btn.classList.add('is-hover');
       tip.innerHTML = `<span class="ct-name">${t.s.com}</span> · <span class="ct-n">${t.n}</span> <span class="ct-w">${t.n === 1 ? 'visit' : 'visits'} · ${windowLabel(windowH)}</span>`;
