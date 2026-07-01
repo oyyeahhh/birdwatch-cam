@@ -76,9 +76,14 @@
     transition: transform 480ms cubic-bezier(.7,.05,.2,1);
   }
   .view { flex: 0 0 100%; height: 100%; overflow: auto; padding: 8px 48px 120px; position: relative; }
+  /* Collage and stats fit the viewport (no scroll); atlas + the rest scroll. */
+  .view#v0, .view#v1 { overflow: hidden; padding: 8px 32px 88px; }
+  .view#v0 { display: flex; }
+  .view#v1 { display: flex; flex-direction: column; }
   @media (max-width: 700px) {
     .static-head { padding: 92px 18px 18px; }
     .view { padding: 8px 16px 120px; }
+    .view#v0, .view#v1 { padding: 8px 16px 88px; }
   }
 
   /* ============ Top bar ============ */
@@ -110,7 +115,6 @@
   }
   .device-pill:hover { transform: translateY(-1px); }
   .device-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-  .device-pill .dot.err { background: var(--err); }
   @media (max-width: 700px) {
     .top { top: 12px; padding: 0 12px; }
     .window-pick { padding: 3px; }
@@ -128,13 +132,13 @@
   .slider button {
     background: transparent; border: 0; color: var(--ink-soft);
     font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.2em;
-    padding: 11px 20px; border-radius: 999px; cursor: pointer; text-transform: uppercase;
+    padding: 11px 18px; border-radius: 999px; cursor: pointer; text-transform: uppercase;
     transition: color 200ms ease; position: relative; z-index: 1;
   }
   .slider button:hover, .slider button[aria-current="true"] { color: var(--ink); }
   @media (max-width: 700px) {
     .slider { bottom: 16px; padding: 3px; max-width: calc(100vw - 16px); }
-    .slider button { font-size: 8px; padding: 9px 9px; letter-spacing: 0.1em; }
+    .slider button { font-size: 8px; padding: 9px 8px; letter-spacing: 0.08em; }
   }
   .seg-pill {
     position: absolute; top: 4px; bottom: 4px; left: 0;
@@ -145,23 +149,255 @@
     pointer-events: none; z-index: 0;
   }
 
-  /* ============ View 1 — Gallery ============ */
-  .gallery-grid {
+  /* ============ Entrances ============
+     Collage tiles bloom centre-out; atlas cards rise row-by-row; the
+     stats graph populates left-to-right. backwards fill holds the hidden
+     start state through each element's stagger delay. */
+  @keyframes gtile-in { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+  .gtile.entering { animation: gtile-in 420ms cubic-bezier(.2,.7,.3,1) backwards; }
+  @keyframes bird-card-in { from { opacity: 0; transform: translateY(16px) scale(0.96); } to { opacity: 1; transform: none; } }
+  .bird-card.entering { animation: bird-card-in 480ms cubic-bezier(.2,.7,.3,1) backwards; }
+  @keyframes stats-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .stats-tl-col.entering, .stats-tl-gridline.entering,
+  .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
+  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering {
+    animation: stats-fade-in 340ms ease backwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gtile.entering, .bird-card.entering, .stats-tl-col.entering,
+    .stats-tl-gridline.entering, .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
+    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering { animation: none; }
+  }
+
+  /* ============ View 1 — Collage ============ */
+  .gcollage {
+    flex: 1 1 auto; width: 100%; max-width: 1300px; margin: 0 auto;
+    position: relative; min-height: 0;
+  }
+  .gtile {
+    position: absolute;
+    background: transparent; border: 0; padding: 0; margin: 0;
+    overflow: visible;
+    transition: transform 130ms ease;
+    cursor: pointer;
+  }
+  .gtile.is-hover { transform: scale(1.04); z-index: 3; }
+  .gtile img, .gtile svg {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+    filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
+    transition: filter 130ms ease;
+  }
+  .gtile.is-hover img, .gtile.is-hover svg {
+    filter: drop-shadow(0 3px 10px rgba(26,22,18,0.26)) saturate(1.1);
+  }
+  .collage-tip {
+    position: absolute; left: 50%; bottom: 14px;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: var(--paper);
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(26,22,18,0.12), inset 0 0 0 1px rgba(255,255,255,0.6);
+    font: italic 13px/1.3 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    opacity: 0; pointer-events: none;
+    transition: opacity 150ms ease;
+    white-space: nowrap;
+    z-index: 4;
+  }
+  .collage-tip[aria-hidden="false"] { opacity: 1; }
+  .collage-tip .ct-name { font-style: normal; font-weight: 600; }
+  .collage-tip .ct-n { font-style: normal; font-weight: 700; }
+  .collage-tip .ct-w { color: var(--ink-soft); }
+  .empty {
+    color: var(--ink-soft); font: 10px ui-monospace, Menlo, monospace;
+    padding: 120px 0; text-align: center; letter-spacing: 0.18em;
+    text-transform: uppercase; width: 100%;
+  }
+
+  /* ============ View 2 — Stats ============ */
+  .stats-grid {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 80px;
+    max-width: 1100px; margin: 0 auto; width: 100%;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: 1fr; gap: 40px; }
+    .stats-timeline { height: clamp(260px, 44vh, 420px); }
+  }
+  @media (max-width: 700px) {
+    .stats-timeline { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+    .stats-tl-label { font-size: 11px; }
+    .stats-tl-label .sci { font-size: 9px; }
+    .stats-tl-xtick { font-size: 8px; }
+  }
+  @media (min-width: 901px) {
+    .stats-grid { flex: 0 1 auto; margin: auto; }
+  }
+  .stats-timeline {
+    position: relative;
+    flex: 1 1 auto; min-height: 0;
+    padding: 0 0 28px 32px;
+  }
+  .stats-tl-yaxis {
+    position: absolute; left: 0; top: 0; bottom: 28px; width: 28px;
+    border-right: 1px solid var(--hairline);
+  }
+  .stats-tl-ytick {
+    position: absolute; right: 5px;
+    font: 8px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    transform: translateY(50%);
+  }
+  .stats-tl-ytick::after {
+    content: ''; position: absolute; right: -5px; top: 50%;
+    width: 4px; height: 1px; background: var(--hairline);
+  }
+  .stats-tl-plot { position: relative; height: 100%; }
+  .stats-tl-col { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); cursor: pointer; }
+  .stats-tl-gridline {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: var(--hairline); pointer-events: none;
+  }
+  .stats-tl-square {
+    position: absolute; left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    border-left: 1px solid var(--paper);
+    border-right: 1px solid var(--paper);
+    transition: background 140ms ease, transform 140ms ease;
+  }
+  .stats-tl-col.sync-hi .stats-tl-square {
+    background: var(--accent);
+    transform: translateX(-50%) scale(1.18);
+  }
+  .stats-tl-col.sync-hi .stats-tl-label { transform: rotate(-90deg) translateY(55%) scale(1.1); }
+  .stats-tl-col.sync-hi .stats-tl-label .com,
+  .stats-tl-col.sync-hi .stats-tl-label .sci { color: var(--accent); }
+  .stats-tl-label {
+    position: absolute; left: 50%;
+    transform-origin: 0% 100%;
+    transform: rotate(-90deg) translateY(50%);
+    white-space: nowrap;
+    font: 10px/1.15 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    transition: transform 130ms ease;
+  }
+  .stats-tl-label .com { display: block; font-weight: 600; transition: color 130ms ease; }
+  .stats-tl-label .sci {
+    display: block; font-style: italic; color: var(--ink-soft); font-size: 8.5px;
+    transition: color 130ms ease;
+  }
+  .stats-tl-xtick {
+    position: absolute; bottom: -19px;
+    transform: translateX(-50%);
+    font: 7px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .stats-tl-empty {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    text-transform: lowercase; letter-spacing: 0.18em;
+  }
+  .stats-tl-cap {
+    position: absolute; top: 0; right: 0; z-index: 2;
+    background: var(--paper); padding: 1px 0 3px 8px;
+    font: 8.5px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .stats-side {
+    display: flex; flex-direction: column; justify-content: center;
+    align-self: stretch; max-height: 100%;
+    padding: 6px 0;
+  }
+  .stats-side h3 {
+    font: 700 10px ui-monospace, Menlo, monospace; color: var(--ink);
+    letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 1px;
+    border-left: 2px solid var(--accent); padding-left: 10px;
+  }
+  .stats-side .grp { flex: 0 0 auto; }
+  .stats-side .grp + .grp { margin-top: 22px; }
+  .stats-side .grp small {
+    display: block; font: 9px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em; margin: 0 0 3px 12px;
+  }
+  .stats-side ol { list-style: none; padding: 0; margin: 0; }
+  .stats-side li {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 10px;
+    padding: 2px 0;
+    box-shadow: inset 0 -1px 0 rgba(26,22,18,0.05);
+    font: 12.5px/1.25 ui-serif, Georgia, serif; color: var(--ink);
+    align-items: baseline;
+    transition: background 140ms ease, color 140ms ease;
+  }
+  .stats-side li[data-sci] { cursor: pointer; }
+  .stats-side li[data-sci]:hover, .stats-side li.sync-hi { background: var(--paper-2); }
+  .stats-side li.sync-hi span:not(.yr):not(.ct) { color: var(--accent); }
+  .stats-side li .yr { font: 9.5px ui-monospace, Menlo, monospace; color: var(--accent); letter-spacing: 0.04em; }
+  .stats-side li .ct { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  /* ============ View 3 — Atlas ============ */
+  .atlas-controls {
+    position: sticky; top: 0; z-index: 2;
+    max-width: 1280px; margin: 0 auto 18px;
+    display: flex; justify-content: flex-end; align-items: center;
+    pointer-events: none;
+  }
+  .atlas-sort {
+    pointer-events: auto;
+    display: inline-flex; padding: 3px; position: relative;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess);
+  }
+  .atlas-sort button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    width: 30px; height: 26px; padding: 0; border-radius: 999px;
+    cursor: pointer; position: relative; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color 200ms ease;
+  }
+  .atlas-sort button svg { width: 13px; height: 13px; display: block; }
+  .atlas-sort button:hover, .atlas-sort button[aria-current="true"] { color: var(--ink); }
+  .atlas-sort button .tip {
+    position: absolute; top: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: lowercase; color: var(--ink-soft);
+    background: var(--paper); padding: 3px 8px; border-radius: 4px;
+    box-shadow: var(--raised);
+    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  }
+  .atlas-sort button:hover .tip { opacity: 1; }
+  .atlas-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 22px;
-    max-width: 1180px; margin: 0 auto;
+    max-width: 1280px; margin: 0 auto;
+  }
+  @media (max-width: 700px) {
+    .atlas-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .atlas-grid .bird-card { min-height: 0; padding: 12px 12px 14px; border-radius: 9px; }
+    .atlas-grid .bird-card .stat { top: 10px; left: 11px; font-size: 8px; }
+    .atlas-grid .bird-card .stat .n { font-size: 11px; }
+    .atlas-grid .bird-card .img-wrap { margin: 30px 0 8px; }
+    .atlas-grid .bird-card .img-wrap img, .atlas-grid .bird-card .img-wrap svg { max-height: 96px; }
+    .atlas-grid .bird-card h3 { font-size: 12.5px; }
+    .atlas-grid .bird-card .sci { font-size: 9.5px; }
+    .atlas-grid .bird-card .actions { display: none; }
+    .atlas-grid .lifer-badge { top: 9px; right: 9px; font-size: 7px; padding: 3px 5px; letter-spacing: 0.1em; }
   }
   .bird-card {
     position: relative;
-    background: var(--paper); border-radius: 10px;
+    background: var(--paper);
+    border-radius: 10px;
     padding: 16px 16px 12px;
     box-shadow: var(--edge-lg);
     display: flex; flex-direction: column;
-    min-height: 290px;
+    min-height: 320px;
     transition: transform 200ms ease, box-shadow 200ms ease;
   }
-  .bird-card:hover { transform: translateY(-1px); }
+  .bird-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(26,22,18,0.12); }
   .bird-card .stat {
     position: absolute; top: 14px; left: 16px;
     font: 9px/1.5 ui-monospace, Menlo, monospace;
@@ -170,9 +406,9 @@
   .bird-card .stat .n {
     color: var(--ink); font: 700 13px/1 ui-serif, Georgia, serif;
     font-variant-numeric: tabular-nums; margin-right: 4px;
+    letter-spacing: 0;
   }
-  .bird-card .stat .lbl { display: block; }
-  .new-badge {
+  .lifer-badge {
     position: absolute; top: 12px; right: 12px; z-index: 2;
     font: 700 8px/1 ui-monospace, Menlo, monospace;
     letter-spacing: 0.14em; text-transform: uppercase;
@@ -184,10 +420,10 @@
   .bird-card .img-wrap {
     flex: 1 1 auto; min-height: 0;
     display: flex; align-items: center; justify-content: center;
-    margin: 34px 0 10px; padding: 4px;
+    margin: 38px 0 10px; padding: 4px;
   }
-  .bird-card .img-wrap svg, .bird-card .img-wrap img {
-    max-width: 100%; height: 130px; display: block; object-fit: contain;
+  .bird-card .img-wrap img, .bird-card .img-wrap svg {
+    max-width: 100%; max-height: 160px; display: block;
     filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
   }
   .bird-card h3 {
@@ -197,50 +433,41 @@
   }
   .bird-card .sci { font: italic 11px/1.2 ui-serif, Georgia, serif; color: var(--ink-2); margin: 2px 0 0; }
   .bird-card .actions {
-    display: flex; gap: 6px; align-items: center;
+    display: flex; gap: 6px; align-items: stretch;
     margin-top: 12px; padding-top: 10px;
     box-shadow: inset 0 1px 0 rgba(26,22,18,0.07);
   }
   .chip {
-    background: var(--paper-2); border: 0; color: var(--ink);
-    padding: 5px 9px; border-radius: 4px;
+    flex: 0 0 auto;
+    background: var(--paper-2);
+    border: 0; color: var(--ink);
+    padding: 5px 9px;
+    border-radius: 4px;
     font: 9.5px/1 ui-monospace, Menlo, monospace;
     text-transform: lowercase; letter-spacing: 0.10em;
+    text-decoration: none;
     display: inline-flex; align-items: center; gap: 5px;
-    box-shadow: var(--raised); white-space: nowrap;
+    box-shadow: var(--raised);
+    transition: transform 160ms ease, color 160ms ease;
+    white-space: nowrap;
   }
+  a.chip { cursor: pointer; }
+  a.chip:hover { color: var(--ink); transform: translateY(-1px); }
+  .chip.ext::after { content: '↗'; opacity: 0.6; font-size: 11px; }
   .chip.warn { color: var(--warn); }
   .chip.soft { color: var(--ink-soft); }
-  .gallery-empty {
-    grid-column: 1 / -1; padding: 80px 16px; text-align: center;
+  .atlas-empty {
+    grid-column: 1 / -1;
+    padding: 80px 16px; text-align: center;
+    font: 12px/1.6 ui-serif, Georgia, serif; color: var(--ink-2);
+  }
+  .atlas-empty p { margin: 0 0 4px; }
+  .atlas-empty p.hint {
     font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft);
-    letter-spacing: 0.18em; text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
-  /* ============ View 2 — Timeline ============ */
-  .tl-wrap { max-width: 640px; margin: 0 auto; }
-  .tl-wrap ol { list-style: none; padding: 0; margin: 0; }
-  .tl-wrap li {
-    display: grid; grid-template-columns: 76px 1fr auto; gap: 14px;
-    padding: 9px 4px;
-    box-shadow: inset 0 -1px 0 rgba(26,22,18,0.05);
-    font: 14px/1.3 ui-serif, Georgia, serif; color: var(--ink);
-    align-items: baseline;
-  }
-  .tl-wrap li .t { font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft); letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
-  .tl-wrap li .nm { font-weight: 600; }
-  .tl-wrap li .nm .sci { font: italic 11px ui-serif, Georgia, serif; color: var(--ink-soft); font-weight: 400; margin-left: 8px; }
-  .tl-wrap li .ct { font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
-  .tl-wrap li .ct.warn { color: var(--warn); }
-  .tl-day {
-    font: 700 10px ui-monospace, Menlo, monospace; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--ink);
-    border-left: 2px solid var(--accent); padding-left: 10px;
-    margin: 26px 0 6px;
-  }
-  .tl-day:first-child { margin-top: 4px; }
-
-  /* ============ View 3 — Diagnostics ============ */
+  /* ============ View 4 — Camera health ============ */
   .diag-frame { max-width: 1000px; margin: 0 auto; }
   .demo-note {
     font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
@@ -303,7 +530,7 @@
     overflow: auto; white-space: pre-wrap;
   }
 
-  /* ============ View 4 — Configuration ============ */
+  /* ============ View 5 — Configuration ============ */
   .conf-frame { max-width: 560px; margin: 0 auto; }
   .menu-section { margin-top: 20px; padding-top: 14px; border-top: 1px solid rgba(26,22,18,0.07); }
   .menu-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -426,7 +653,7 @@
     <button data-h="1000000" type="button">ALL</button>
   </div>
   <button class="device-pill" id="devicePill" type="button" title="camera health">
-    <span class="dot" id="deviceDot"></span>yst-nj-lab
+    <span class="dot"></span>yst-nj-lab
   </button>
 </header>
 
@@ -437,22 +664,70 @@
   </header>
   <div class="views" id="views">
 
-    <!-- ========== View 1 — Gallery ========== -->
-    <section class="view" id="v0" aria-label="Gallery">
-      <div class="gallery-grid" id="galleryGrid"></div>
+    <!-- ========== View 1 — Collage ========== -->
+    <section class="view" id="v0" aria-label="Bird collage">
+      <div class="gcollage" id="collage"></div>
     </section>
 
-    <!-- ========== View 2 — Timeline ========== -->
-    <section class="view" id="v1" aria-label="Timeline">
-      <div class="tl-wrap"><ol id="tlList"></ol></div>
+    <!-- ========== View 2 — Stats ========== -->
+    <section class="view" id="v1" aria-label="Stats">
+      <div class="stats-grid">
+        <div class="stats-timeline" id="statsTimeline"></div>
+        <aside class="stats-side">
+          <div class="grp">
+            <h3>By Period</h3>
+            <small>detections, grouped by recency</small>
+            <ol id="statsByPeriod"></ol>
+          </div>
+          <div class="grp">
+            <h3>Top Species</h3>
+            <small id="statsTopSpecCap">most-seen, current window</small>
+            <ol id="statsTopSpec"></ol>
+          </div>
+          <div class="grp">
+            <h3>First Detections</h3>
+            <small>newest additions to the life list</small>
+            <ol id="statsFirstSeen"></ol>
+          </div>
+        </aside>
+      </div>
     </section>
 
-    <!-- ========== View 3 — Diagnostics ========== -->
-    <section class="view" id="v2" aria-label="Diagnostics">
+    <!-- ========== View 3 — Atlas ========== -->
+    <section class="view" id="v2" aria-label="Atlas">
+      <div class="atlas-controls">
+        <div class="atlas-sort" id="atlasSort" role="tablist" aria-label="sort atlas">
+          <i class="seg-pill" aria-hidden="true"></i>
+          <button data-sort="count" type="button" aria-current="true" aria-label="most seen">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 12 V8"/><path d="M6 12 V5"/><path d="M10 12 V3"/>
+            </svg>
+            <span class="tip">most seen</span>
+          </button>
+          <button data-sort="recent" type="button" aria-label="most recent">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="7" cy="7" r="5.2"/><path d="M7 4 V7 L9.2 8.3"/>
+            </svg>
+            <span class="tip">most recent</span>
+          </button>
+          <button data-sort="alpha" type="button" aria-label="alphabetical">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.4 11.5 L4 4.5 L5.6 11.5"/><path d="M2.9 9.2 H5.1"/>
+              <path d="M8.2 11.5 V4.5 H10.4 a1.3 1.3 0 0 1 0 2.6 H8.2"/><path d="M8.2 7.1 H10.6 a1.5 1.5 0 0 1 0 3 H8.2"/>
+            </svg>
+            <span class="tip">a → z</span>
+          </button>
+        </div>
+      </div>
+      <div class="atlas-grid" id="atlasGrid"></div>
+    </section>
+
+    <!-- ========== View 4 — Camera health ========== -->
+    <section class="view" id="v3" aria-label="Camera health">
       <div class="diag-frame">
         <p class="demo-note" id="demoNote">showing demo data — firmware /api not connected</p>
         <div class="admin-grid">
-          <div class="admin-card"><h3>Status</h3><div class="v">Online</div><div class="sub" id="hbSub">heartbeat 40 s ago</div></div>
+          <div class="admin-card"><h3>Status</h3><div class="v">Online</div><div class="sub">heartbeat 40 s ago</div></div>
           <div class="admin-card"><h3>Wi-Fi signal</h3><div class="v">-58 dBm</div><div class="sub">good · ch 6</div></div>
           <div class="admin-card"><h3>Uptime</h3><div class="v">6 d 4 h</div><div class="sub">fw 0.1.0 · v3.2.5 base</div></div>
           <div class="admin-card"><h3>Free memory</h3><div class="v">118 KB</div><div class="sub">psram 5.2 MB free</div></div>
@@ -481,8 +756,8 @@
       </div>
     </section>
 
-    <!-- ========== View 4 — Configuration ========== -->
-    <section class="view" id="v3" aria-label="Configuration">
+    <!-- ========== View 5 — Configuration ========== -->
+    <section class="view" id="v4" aria-label="Configuration">
       <div class="conf-frame">
 
         <div class="menu-section">
@@ -561,10 +836,11 @@
 
 <nav class="slider" id="slider" aria-label="View">
   <i class="seg-pill" aria-hidden="true"></i>
-  <button type="button" data-i="0" aria-current="true">gallery</button>
-  <button type="button" data-i="1">timeline</button>
-  <button type="button" data-i="2">diagnostics</button>
-  <button type="button" data-i="3">configuration</button>
+  <button type="button" data-i="0" aria-current="true">collage</button>
+  <button type="button" data-i="1">stats</button>
+  <button type="button" data-i="2">atlas</button>
+  <button type="button" data-i="3">health</button>
+  <button type="button" data-i="4">config</button>
 </nav>
 
 <script>
@@ -572,49 +848,51 @@
    Real firmware replaces this by answering /api/status and
    /api/detections; until then the page renders this sample so the
    design can be judged with honest content. Detections are hours-ago
-   offsets so the time-window pill genuinely filters. */
+   offsets so the time-window pill genuinely filters; allN is the
+   pretend all-time count; firstDays is days since first ever seen. */
 const SPECIES = [
-  { c: 'Northern Cardinal', s: 'Cardinalis cardinalis', conf: 92, photo: true,  fresh: false,
+  { com: 'Northern Cardinal', sci: 'Cardinalis cardinalis', ebird: 'norcar', conf: 92, photo: true, allN: 412, firstDays: 210,
     pal: { body: '#b5402e', wing: '#7d2a1e', beak: '#d98e32', crest: true, face: '#241813' },
-    det: [0.3, 1.4, 3.2, 5.5, 8.1, 22, 26, 29, 47, 51, 73, 98, 120, 141] },
-  { c: 'Blue Jay', s: 'Cyanocitta cristata', conf: 88, photo: true, fresh: false,
+    det: [0.3, 1.4, 3.2, 5.5, 8.1, 22, 26, 29, 47, 51, 73, 98, 120, 141, 150, 162] },
+  { com: 'Blue Jay', sci: 'Cyanocitta cristata', ebird: 'blujay', conf: 88, photo: true, allN: 268, firstDays: 190,
     pal: { body: '#4a7fb5', wing: '#2d5a8a', beak: '#241813', crest: true, belly: '#e8e4da' },
-    det: [1.9, 4.5, 9, 25, 30, 49, 75, 96, 122] },
-  { c: 'House Finch', s: 'Haemorhous mexicanus', conf: 68, photo: true, fresh: false,
-    img: 'haemorhous-mexicanus.png',
-    pal: { body: '#9a8f7f', wing: '#6e6353', beak: '#5a4f42', head: '#a34a35' },
-    det: [2.4, 6, 11, 27, 52, 78, 100] },
-  { c: 'American Goldfinch', s: 'Spinus tristis', conf: 95, photo: true, fresh: false,
-    img: 'spinus-tristis.png',
-    pal: { body: '#d9a72e', wing: '#2c2825', beak: '#c47a1f' },
-    det: [4.2, 10, 28, 55, 79] },
-  { c: 'Mourning Dove', s: 'Zenaida macroura', conf: 90, photo: true, fresh: false,
-    img: 'zenaida-macroura.png',
-    pal: { body: '#a89a88', wing: '#8a7d6c', beak: '#4a3f31' },
-    det: [6.5, 12, 31, 56] },
-  { c: 'Tufted Titmouse', s: 'Baeolophus bicolor', conf: 84, photo: false, fresh: false,
+    det: [1.9, 4.5, 9, 25, 30, 49, 75, 96, 122, 144] },
+  { com: 'House Sparrow', sci: 'Passer domesticus', ebird: 'houspa', img: 'passer-domesticus.png', ar: 1.226, conf: 91, photo: true, allN: 351, firstDays: 200,
+    det: [0.8, 2.1, 5, 7, 21, 23, 45, 70, 95, 118, 140, 160] },
+  { com: 'House Finch', sci: 'Haemorhous mexicanus', ebird: 'houfin', img: 'haemorhous-mexicanus.png', ar: 1.05, conf: 68, photo: true, allN: 187, firstDays: 160,
+    det: [2.4, 6, 11, 27, 52, 78, 100, 130] },
+  { com: 'European Starling', sci: 'Sturnus vulgaris', ebird: 'eursta', img: 'sturnus-vulgaris.png', ar: 1.02, conf: 94, photo: true, allN: 203, firstDays: 170,
+    det: [5.2, 8.8, 24, 48, 72, 97, 124] },
+  { com: 'American Robin', sci: 'Turdus migratorius', ebird: 'amerob', img: 'turdus-migratorius.png', ar: 0.965, conf: 93, photo: true, allN: 154, firstDays: 180,
+    det: [3.6, 20, 44, 68, 92, 116, 139, 161] },
+  { com: 'American Goldfinch', sci: 'Spinus tristis', ebird: 'amegfi', img: 'spinus-tristis.png', ar: 0.748, conf: 95, photo: true, allN: 96, firstDays: 150,
+    det: [4.2, 10, 28, 55, 79, 110] },
+  { com: 'Mourning Dove', sci: 'Zenaida macroura', ebird: 'moudov', img: 'zenaida-macroura.png', ar: 1.027, conf: 90, photo: true, allN: 121, firstDays: 140,
+    det: [6.5, 12, 31, 56, 90, 133] },
+  { com: 'White-breasted Nuthatch', sci: 'Sitta carolinensis', ebird: 'whbnut', img: 'sitta-carolinensis.png', ar: 0.723, conf: 89, photo: true, allN: 64, firstDays: 90,
+    det: [7.8, 30, 58, 102] },
+  { com: 'Downy Woodpecker', sci: 'Dryobates pubescens', ebird: 'dowwoo', img: 'dryobates-pubescens.png', ar: 0.426, conf: 87, photo: true, allN: 51, firstDays: 120,
+    det: [13, 36, 84, 129] },
+  { com: 'Tufted Titmouse', sci: 'Baeolophus bicolor', ebird: 'tuftit', conf: 84, photo: false, allN: 33, firstDays: 40,
     pal: { body: '#a8a29a', wing: '#8a847c', beak: '#4a4540', crest: true, belly: '#e0dbd2' },
-    det: [9.5, 33] },
-  { c: 'Dark-eyed Junco', s: 'Junco hyemalis', conf: 55, photo: true, fresh: true,
-    img: 'junco-hyemalis.png',
-    pal: { body: '#4a4540', wing: '#38332e', beak: '#d0b8a0', belly: '#ece8e1' },
+    det: [9.5, 33, 80] },
+  { com: 'Song Sparrow', sci: 'Melospiza melodia', ebird: 'sonspa', img: 'melospiza-melodia.png', ar: 1.124, conf: 76, photo: true, allN: 42, firstDays: 25,
+    det: [14, 37, 61, 108] },
+  { com: 'House Wren', sci: 'Troglodytes aedon', ebird: 'houwre', img: 'troglodytes-aedon.png', ar: 1.194, conf: 71, photo: true, allN: 18, firstDays: 15,
+    det: [18, 42, 66, 115] },
+  { com: 'Red-winged Blackbird', sci: 'Agelaius phoeniceus', ebird: 'rewbla', img: 'agelaius-phoeniceus.png', ar: 0.671, conf: 82, photo: true, allN: 7, firstDays: 6,
+    det: [40, 88, 136] },
+  { com: 'Northern Mockingbird', sci: 'Mimus polyglottos', ebird: 'normoc', img: 'mimus-polyglottos.png', ar: 1.531, conf: 86, photo: true, allN: 4, firstDays: 3,
+    det: [64, 112, 158] },
+  { com: 'Dark-eyed Junco', sci: 'Junco hyemalis', ebird: 'daejun', img: 'junco-hyemalis.png', ar: 1.447, conf: 55, photo: true, allN: 1, firstDays: 0,
     det: [16.4] },
 ];
 
-/* Bundled illustration cutouts (CC BY-NC-SA 4.0, from AvianVisitors —
-   see ../assets/illustrations/LICENSE.md). Keyed by kebab-case
-   scientific name; species without a file fall back to the built-in
-   SVG silhouette below. */
 const ILLO_DIR = '../assets/illustrations/';
-function birdArt(sp) {
-  return sp.img
-    ? `<img src="${ILLO_DIR}${sp.img}" alt="" loading="lazy">`
-    : birdSvg(sp.pal);
-}
+const SVG_AR = 110 / 78;
 
-/* One shared perched-cutout silhouette; per-species palette fills it.
-   Transparent background so the cutout sits on paper, like the
-   AvianVisitors illustration PNGs. */
+/* One shared perched-cutout silhouette for species without a bundled
+   illustration; per-species palette fills it. */
 function birdSvg(p) {
   return `<svg viewBox="0 0 110 78" role="img" aria-hidden="true">
     <line x1="6" y1="66" x2="104" y2="66" stroke="#8a6f4d" stroke-width="3" stroke-linecap="round"/>
@@ -631,66 +909,30 @@ function birdSvg(p) {
     <line x1="59" y1="57" x2="59" y2="66" stroke="#5a5148" stroke-width="1.6"/>
   </svg>`;
 }
+function birdArt(sp, alt) {
+  return sp.img
+    ? `<img src="${ILLO_DIR}${sp.img}" alt="${alt || ''}" loading="lazy" decoding="async">`
+    : birdSvg(sp.pal);
+}
 
-const fmtTime = h => {
-  const d = new Date(Date.now() - h * 3600e3);
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-};
-const fmtDay = h => {
-  const d = new Date(Date.now() - h * 3600e3);
-  const today = new Date(); today.setHours(0,0,0,0);
-  if (d >= today) return 'today';
-  const diff = Math.ceil((today - d) / 864e5);
-  return diff === 1 ? 'yesterday' : d.toLocaleDateString([], { weekday: 'long' }).toLowerCase();
-};
-
+/* ============ Helpers ============ */
 let windowH = 24;
-
-/* ============ Gallery ============ */
-function renderGallery() {
-  const grid = document.getElementById('galleryGrid');
-  const cards = SPECIES
-    .map(sp => ({ sp, n: sp.det.filter(h => h <= windowH).length }))
-    .filter(x => x.n > 0)
-    .sort((a, b) => b.n - a.n)
-    .map(({ sp, n }) => {
-      const last = Math.min(...sp.det.filter(h => h <= windowH));
-      const conf = sp.conf >= 80
-        ? `<span class="chip soft">${sp.conf}%</span>`
-        : `<span class="chip warn">${sp.conf}% confident</span>`;
-      const illo = sp.photo ? '' : `<span class="chip soft">illustration</span>`;
-      return `<article class="bird-card">
-        <div class="stat"><span class="n">${n}</span>visit${n === 1 ? '' : 's'}<span class="lbl">last ${fmtTime(last)}</span></div>
-        ${sp.fresh ? '<span class="new-badge">new</span>' : ''}
-        <div class="img-wrap">${birdArt(sp)}</div>
-        <h3>${sp.c}</h3>
-        <p class="sci">${sp.s}</p>
-        <div class="actions">${conf}${illo}</div>
-      </article>`;
-    });
-  grid.innerHTML = cards.length ? cards.join('') :
-    '<div class="gallery-empty">no birds in this window</div>';
+const winCount = sp => sp.det.filter(h => h <= windowH).length;
+const lastSeenMs = sp => {
+  const inWin = sp.det.filter(h => h <= windowH);
+  return inWin.length ? Date.now() - Math.min(...inWin) * 3600e3 : NaN;
+};
+const isAllWindow = () => windowH >= 1000000;
+function windowLabel(h) {
+  if (h <= 1) return 'past hour';
+  if (h <= 12) return 'past 12h';
+  if (h <= 24) return 'past 24h';
+  if (h <= 168) return 'past 7 days';
+  return 'all time';
 }
-
-/* ============ Timeline ============ */
-function renderTimeline() {
-  const list = document.getElementById('tlList');
-  const rows = [];
-  SPECIES.forEach(sp => sp.det.forEach(h => {
-    if (h <= windowH) rows.push({ sp, h });
-  }));
-  rows.sort((a, b) => a.h - b.h);
-  let day = null, html = '';
-  rows.forEach(r => {
-    const d = fmtDay(r.h);
-    if (d !== day) { day = d; html += `<p class="tl-day">${d}</p>`; }
-    const ct = r.sp.conf >= 80
-      ? `<span class="ct">${r.sp.conf}%</span>`
-      : `<span class="ct warn">${r.sp.conf}%</span>`;
-    html += `<li><span class="t">${fmtTime(r.h)}</span><span class="nm">${r.sp.c}<span class="sci">${r.sp.s}</span></span>${ct}</li>`;
-  });
-  list.innerHTML = html || '<li><span class="t"></span><span class="nm">quiet out there</span><span class="ct"></span></li>';
-}
+const pad2 = n => (n < 10 ? '0' : '') + n;
+const padRank = n => (n < 10 ? '0' : '') + n;
+const fmtN = n => (+n).toLocaleString();
 
 /* ============ Sliding pills ============ */
 function placePill(box) {
@@ -710,35 +952,403 @@ function wireSeg(box, onPick) {
   placePill(box);
 }
 
-/* ============ Views ============ */
-const TITLES = ["Seen Recently", "Today's Visits", "Camera Health", "Configuration"];
+/* ============ Views ============
+   Titles follow the AvianVisitors pattern: collage + stats share one
+   title (no fade between them); atlas gets its own. */
+const VIEW_TITLES = ['Seen Recently', 'Seen Recently', 'The Life List', 'Camera Health', 'Configuration'];
+const SLIDE_MS = 480;
+const SWITCH_LEAD = SLIDE_MS - 100;
+const STATS_LEAD = SLIDE_MS - 200;
 const views = document.getElementById('views');
 const head = document.querySelector('.static-head');
 const titleEl = document.getElementById('staticTitle');
-let current = 0;
+let currentView = 0;
+function setTitleForView(i) {
+  const next = VIEW_TITLES[i];
+  if (titleEl.textContent === next) return;
+  head.classList.add('swap-out');
+  setTimeout(() => {
+    titleEl.textContent = next;
+    void head.offsetWidth;
+    head.classList.remove('swap-out');
+  }, 220);
+}
 function goView(i) {
-  if (i === current) return;
-  current = i;
+  const switching = i !== currentView;
+  currentView = i;
   views.style.transform = `translateX(-${i * 100}%)`;
-  if (titleEl.textContent !== TITLES[i]) {
-    head.classList.add('swap-out');
-    setTimeout(() => { titleEl.textContent = TITLES[i]; head.classList.remove('swap-out'); }, 240);
-  }
+  setTitleForView(i);
+  if (!switching) return;
+  if (i === 0) playCollageEntrance();
+  else if (i === 1) playStatsEntrance(STATS_LEAD);
+  else if (i === 2) playAtlasEntrance(SWITCH_LEAD);
 }
 wireSeg(document.getElementById('slider'), btn => goView(+btn.dataset.i));
 document.getElementById('devicePill').addEventListener('click', () => {
   const s = document.getElementById('slider');
   s.querySelectorAll('button').forEach(b => b.removeAttribute('aria-current'));
-  s.querySelector('[data-i="2"]').setAttribute('aria-current', 'true');
+  s.querySelector('[data-i="3"]').setAttribute('aria-current', 'true');
   placePill(s);
-  goView(2);
+  goView(3);
 });
 
-/* Time window */
+/* ============ View 1 — Collage ============
+   Count-weighted cluster in the AvianVisitors manner: each species'
+   tile area follows n^EXP (sub-linear, so a frequent bird reads larger
+   without dwarfing the rare ones), floored so a 1-visit bird stays
+   legible, packed centre-out on an elliptical spiral, shrunk-to-fit,
+   then re-centred. Their original hit-tests alpha masks; with a small
+   set our rectangles rarely overlap, so plain per-tile hover works. */
+const collage = document.getElementById('collage');
+function renderCollage(animate) {
+  collage.innerHTML = '';
+  const items = SPECIES.map(s => ({ s, n: winCount(s) })).filter(x => x.n > 0);
+  if (!items.length) {
+    collage.innerHTML = '<p class="empty">no birds seen in this window.</p>';
+    return;
+  }
+  const W = collage.clientWidth, H = collage.clientHeight;
+  if (!W || !H) { setTimeout(() => renderCollage(animate), 80); return; }
+
+  const EXP = 0.62;
+  const budget = W * H * 0.40;
+  const minArea = W * H * 0.014;
+  const PAD = 8;
+  const tiles = items.map(x => ({
+    s: x.s, n: x.n,
+    ar: x.s.ar || SVG_AR,
+    score: Math.pow(Math.max(1, x.n), EXP),
+  }));
+  const sumScore = tiles.reduce((a, t) => a + t.score, 0) || 1;
+  tiles.forEach(t => { t.area = Math.max(minArea, budget * t.score / sumScore); });
+  const sumA = tiles.reduce((a, t) => a + t.area, 0);
+  if (sumA > budget) {
+    const fixed = tiles.filter(t => t.area <= minArea + 1e-9).reduce((a, t) => a + t.area, 0);
+    const flex = sumA - fixed;
+    const shrink = flex > 0 ? Math.min(1, Math.max(0, budget - fixed) / flex) : 1;
+    tiles.forEach(t => { if (t.area > minArea + 1e-9) t.area *= shrink; });
+  }
+  tiles.forEach(t => { t.w = Math.sqrt(t.area * t.ar); t.h = t.w / t.ar; });
+
+  const narrow = W <= 700;
+  const xBias = narrow ? 1 : 1.55;   // horizontal ellipse on wide screens
+  function pack() {
+    const placed = [];
+    const collides = (x, y, w, h) => placed.some(p =>
+      x < p.x + p.w + PAD && x + w + PAD > p.x &&
+      y < p.y + p.h + PAD && y + h + PAD > p.y);
+    tiles.slice().sort((a, b) => b.area - a.area).forEach(t => {
+      let done = false;
+      for (let r = 0; r < Math.max(W, H) && !done; r += 6) {
+        const steps = Math.max(8, Math.round(r / 4));
+        for (let k = 0; k < steps && !done; k++) {
+          const a = (k / steps) * Math.PI * 2 + r * 0.03;
+          const x = W / 2 + Math.cos(a) * r * xBias - t.w / 2;
+          const y = H / 2 + Math.sin(a) * r - t.h / 2;
+          if (!collides(x, y, t.w, t.h)) { t.x = x; t.y = y; placed.push(t); done = true; }
+        }
+      }
+      if (!done) { t.x = -9999; t.y = -9999; placed.push(t); }
+    });
+    return placed;
+  }
+  let placed = pack();
+  const bounds = () => {
+    let L = Infinity, R = -Infinity, T = Infinity, B = -Infinity;
+    placed.forEach(t => {
+      if (t.x < -1000) return;
+      L = Math.min(L, t.x); R = Math.max(R, t.x + t.w);
+      T = Math.min(T, t.y); B = Math.max(B, t.y + t.h);
+    });
+    return { L, R, T, B };
+  };
+  let b = bounds();
+  for (let iter = 0; iter < 8; iter++) {
+    const missing = placed.some(t => t.x < -1000);
+    const overflow = b.L < 0 || b.T < 0 || b.R > W || b.B > H;
+    if (!missing && !overflow) break;
+    tiles.forEach(t => { t.w *= 0.93; t.h *= 0.93; });
+    placed = pack();
+    b = bounds();
+  }
+  const dx = W / 2 - (b.L + b.R) / 2, dy = H / 2 - (b.T + b.B) / 2;
+  placed.forEach(t => { if (t.x > -1000) { t.x += dx; t.y += dy; } });
+
+  const tip = document.createElement('div');
+  tip.className = 'collage-tip';
+  tip.setAttribute('aria-hidden', 'true');
+
+  placed.forEach(t => {
+    if (t.x < -1000) return;
+    const btn = document.createElement('button');
+    btn.className = 'gtile';
+    btn.type = 'button';
+    btn.setAttribute('data-sci', t.s.sci);
+    btn.setAttribute('aria-label', t.s.com);
+    btn.title = `${t.s.com} · ${t.n} ${t.n === 1 ? 'visit' : 'visits'} ${windowLabel(windowH)}`;
+    btn.style.left = t.x + 'px';
+    btn.style.top = t.y + 'px';
+    btn.style.width = t.w + 'px';
+    btn.style.height = t.h + 'px';
+    btn.innerHTML = birdArt(t.s, t.s.com);
+    btn.addEventListener('mouseenter', () => {
+      btn.classList.add('is-hover');
+      tip.innerHTML = `<span class="ct-name">${t.s.com}</span> · <span class="ct-n">${t.n}</span> <span class="ct-w">${t.n === 1 ? 'visit' : 'visits'} · ${windowLabel(windowH)}</span>`;
+      tip.setAttribute('aria-hidden', 'false');
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.classList.remove('is-hover');
+      tip.setAttribute('aria-hidden', 'true');
+    });
+    collage.appendChild(btn);
+  });
+  collage.appendChild(tip);
+  if (animate) playCollageEntrance();
+}
+
+/* Staggered centre-out bloom, delayed by distance from the collage centre. */
+let collageEntranceT = null;
+function playCollageEntrance() {
+  const tiles = [...collage.querySelectorAll('.gtile')];
+  if (!tiles.length) return;
+  const cx = collage.clientWidth / 2, cy = collage.clientHeight / 2;
+  let maxD = 1;
+  const info = tiles.map(t => {
+    const d = Math.hypot(t.offsetLeft + t.offsetWidth / 2 - cx, t.offsetTop + t.offsetHeight / 2 - cy);
+    maxD = Math.max(maxD, d);
+    return { el: t, d };
+  });
+  const SPREAD = 520;
+  info.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = (o.d / maxD * SPREAD).toFixed(0) + 'ms'; });
+  void collage.offsetWidth;
+  info.forEach(o => o.el.classList.add('entering'));
+  clearTimeout(collageEntranceT);
+  collageEntranceT = setTimeout(() => {
+    info.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = ''; });
+  }, SPREAD + 520);
+}
+
+/* ============ View 2 — Stats ============
+   The editorial detection timeline: one evenly-spaced column per
+   species, ordered by last-detection time (x = time). The ink square
+   fills its column; its height up the plot encodes count. Rotated
+   two-line labels sit just above each square; hairline gridlines mark
+   the column boundaries; per-column timestamps run along the x-axis. */
+function drawHistograms(animate) {
+  const tl = document.getElementById('statsTimeline');
+  const all = SPECIES.map(s => ({ s, n: winCount(s), last: lastSeenMs(s) })).filter(x => x.n > 0);
+  if (!all.length) {
+    tl.innerHTML = '<div class="stats-tl-empty">no detections in this window</div>';
+    return;
+  }
+  const isMobile = (window.innerWidth || 800) <= 700;
+  const containerW = Math.max(140, (tl.clientWidth || window.innerWidth || 800) - 34);
+  const MIN_COL = isMobile ? 52 : 22;
+  const cap = isMobile ? all.length : Math.max(3, Math.floor(containerW / MIN_COL));
+  const trimmed = all.length > cap;
+  let species = all.slice();
+  if (trimmed) {
+    species.sort((a, b) => b.n - a.n);
+    species = species.slice(0, cap);
+  }
+  species.sort((a, b) => a.last - b.last);   // x-axis is time, oldest → newest
+
+  const C = species.length;
+  const maxN = species.reduce((m, x) => Math.max(m, x.n), 1);
+  const colW = isMobile ? MIN_COL : containerW / C;
+  const plotW = isMobile ? Math.max(containerW, C * colW) : containerW;
+  const sq = Math.max(6, Math.min(colW, isMobile ? 60 : 48));
+  const LABEL_GAP = 6;
+  const SPAN = 0.55;
+
+  let ticks = [];
+  if (maxN <= 8) { for (let v = 0; v <= maxN; v++) ticks.push(v); }
+  else {
+    for (let di = 0; di <= 4; di++) ticks.push(Math.round(maxN * di / 4));
+    ticks[ticks.length - 1] = maxN;
+  }
+  const yaxis = ticks.map(v =>
+    `<span class="stats-tl-ytick" style="bottom:${(v / maxN * SPAN * 100).toFixed(1)}%">${v}</span>`).join('');
+
+  const fmtTs = ms => {
+    if (isNaN(ms)) return '';
+    const d = new Date(ms);
+    if (windowH <= 36) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    if (windowH <= 75 * 24) return (d.getMonth() + 1) + '/' + d.getDate();
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  let gridlines = '';
+  for (let gi = 1; gi <= C; gi++) {
+    gridlines += `<i class="stats-tl-gridline" style="left:${(gi / C * 100).toFixed(3)}%"></i>`;
+  }
+  let cols = '', xaxis = '';
+  species.forEach((x, i) => {
+    const centerPct = ((i + 0.5) / C * 100).toFixed(3);
+    const bottomPct = (x.n / maxN * SPAN * 100).toFixed(1);
+    cols += `<div class="stats-tl-col" data-sci="${x.s.sci}" style="left:${centerPct}%;width:${colW.toFixed(2)}px">`
+      + `<div class="stats-tl-square" style="bottom:${bottomPct}%;width:${sq.toFixed(1)}px;height:${sq.toFixed(1)}px"></div>`
+      + `<div class="stats-tl-label" style="bottom:calc(${bottomPct}% + ${sq + LABEL_GAP}px)"><span class="com">${x.s.com}</span><span class="sci">${x.s.sci}</span></div>`
+      + `</div>`;
+    const lab = fmtTs(x.last);
+    if (lab) xaxis += `<span class="stats-tl-xtick" style="left:${centerPct}%">${lab}</span>`;
+  });
+  const note = trimmed ? `<div class="stats-tl-cap">${C} most-seen of ${all.length}</div>` : '';
+  tl.innerHTML = `<div class="stats-tl-yaxis">${yaxis}</div>`
+    + `<div class="stats-tl-plot"${isMobile ? ` style="width:${Math.round(plotW)}px"` : ''}>${gridlines}${cols}${xaxis}</div>`
+    + note;
+  if (animate) playStatsEntrance();
+}
+
+/* Cross-highlight between the timeline squares and the side lists —
+   delegated off the stats view so it survives re-renders. */
+(function wireStatsHighlight() {
+  const v1 = document.getElementById('v1');
+  function setHi(sci, on) {
+    if (!sci) return;
+    v1.querySelectorAll(`.stats-tl-col[data-sci="${sci}"], .stats-side li[data-sci="${sci}"]`)
+      .forEach(el => el.classList.toggle('sync-hi', on));
+  }
+  v1.addEventListener('mouseover', ev => {
+    const el = ev.target.closest && ev.target.closest('[data-sci]');
+    if (el) setHi(el.getAttribute('data-sci'), true);
+  });
+  v1.addEventListener('mouseout', ev => {
+    const el = ev.target.closest && ev.target.closest('[data-sci]');
+    if (el) {
+      if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
+      setHi(el.getAttribute('data-sci'), false);
+    }
+  });
+})();
+
+function liRow(yr, name, ct, sci) {
+  return `<li${sci ? ` data-sci="${sci}"` : ''}><span class="yr">${yr}</span><span>${name}</span><span class="ct">${ct}</span></li>`;
+}
+function renderStatsLists() {
+  const countWithin = h => SPECIES.reduce((a, s) => a + s.det.filter(x => x <= h).length, 0);
+  const hoursSinceMidnight = (Date.now() - new Date().setHours(0, 0, 0, 0)) / 3600e3;
+  const allTotal = SPECIES.reduce((a, s) => a + s.allN, 0);
+  document.getElementById('statsByPeriod').innerHTML =
+      liRow('NOW', 'last hour', fmtN(countWithin(1)))
+    + liRow('TODAY', 'today', fmtN(countWithin(hoursSinceMidnight)))
+    + liRow('WEEK', 'last 7 days', fmtN(countWithin(168)))
+    + liRow('ALL', 'all time', fmtN(allTotal));
+
+  const ranked = SPECIES.map(s => ({ s, n: winCount(s) }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 5);
+  document.getElementById('statsTopSpec').innerHTML = ranked.length
+    ? ranked.map((x, i) => liRow(padRank(i + 1), x.s.com, fmtN(x.n), x.s.sci)).join('')
+    : liRow('-', 'no detections in window', '');
+  document.getElementById('statsTopSpecCap').textContent = 'most-seen, ' + windowLabel(windowH);
+
+  const fs = SPECIES.slice().sort((a, b) => a.firstDays - b.firstDays).slice(0, 5);
+  document.getElementById('statsFirstSeen').innerHTML =
+    fs.map(s => liRow(s.firstDays === 0 ? 'today' : s.firstDays + 'd ago', s.com, '', s.sci)).join('');
+}
+
+let statsEntranceT = null;
+function playStatsEntrance(lead) {
+  lead = lead || 0;
+  const plot = document.querySelector('.stats-tl-plot');
+  if (!plot) return;
+  const SPREAD = 460;
+  const items = [...plot.querySelectorAll('.stats-tl-col, .stats-tl-gridline, .stats-tl-xtick')]
+    .map(el => ({ el, d: (parseFloat(el.style.left) || 0) / 100 * SPREAD }));
+  const yaxis = document.querySelector('.stats-tl-yaxis');
+  if (yaxis) items.push({ el: yaxis, d: 0 });
+  const side = document.querySelector('.stats-side');
+  if (side) {
+    side.querySelectorAll('h3, small').forEach(el => items.push({ el, d: 40 }));
+    const rows = [...side.querySelectorAll('li')];
+    rows.forEach((el, i) => items.push({ el, d: 80 + i / Math.max(1, rows.length - 1) * SPREAD }));
+  }
+  items.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = Math.round(lead + o.d) + 'ms'; });
+  void plot.offsetWidth;
+  items.forEach(o => o.el.classList.add('entering'));
+  clearTimeout(statsEntranceT);
+  statsEntranceT = setTimeout(() => {
+    items.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = ''; });
+  }, lead + SPREAD + 560);
+}
+
+/* ============ View 3 — Atlas ============ */
+const wikiUrl = sci => 'https://en.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
+const ebirdUrl = sp => sp.ebird ? 'https://ebird.org/species/' + sp.ebird : 'https://ebird.org/explore';
+let atlasSortMode = 'count';
+function renderAtlas(animate) {
+  const grid = document.getElementById('atlasGrid');
+  const filtered = isAllWindow() ? SPECIES.slice() : SPECIES.filter(s => winCount(s) > 0);
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="atlas-empty"><p>No detections in this window.</p><p class="hint">Try a longer time window.</p></div>';
+    return;
+  }
+  const species = filtered.slice();
+  if (atlasSortMode === 'count') species.sort((a, b) => b.allN - a.allN);
+  else if (atlasSortMode === 'recent') species.sort((a, b) => Math.min(...a.det) - Math.min(...b.det));
+  else species.sort((a, b) => a.com.localeCompare(b.com));
+
+  grid.innerHTML = species.map(s => {
+    const win = winCount(s);
+    const isLifer = !isAllWindow() && s.firstDays * 24 <= windowH;
+    const statRows = isAllWindow()
+      ? `<div><span class="n">${fmtN(s.allN)}</span>all time</div>`
+      : `<div><span class="n">${fmtN(win)}</span>${windowLabel(windowH)}</div>`
+        + `<div><span class="n">${fmtN(s.allN)}</span>all time</div>`;
+    const conf = s.conf >= 80
+      ? `<span class="chip soft">${s.conf}%</span>`
+      : `<span class="chip warn">${s.conf}% confident</span>`;
+    const illo = s.photo ? '' : `<span class="chip soft">illustration</span>`;
+    return `<article class="bird-card" data-sci="${s.sci}">`
+      + (isLifer ? '<span class="lifer-badge" title="new to the life list in this window">lifer</span>' : '')
+      + `<div class="stat">${statRows}</div>`
+      + `<div class="img-wrap">${birdArt(s, s.com)}</div>`
+      + `<h3>${s.com}</h3>`
+      + `<div class="sci">${s.sci}</div>`
+      + `<div class="actions">${conf}${illo}`
+      +   `<a class="chip ext" href="${wikiUrl(s.sci)}" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>`
+      +   `<a class="chip ext" href="${ebirdUrl(s)}" target="_blank" rel="noopener" aria-label="eBird">ebird</a>`
+      + `</div></article>`;
+  }).join('');
+  if (animate) playAtlasEntrance();
+}
+
+/* Atlas entrance: cards rise + fade row by row, top to bottom. */
+let atlasEntranceT = null;
+function playAtlasEntrance(lead) {
+  lead = lead || 0;
+  const grid = document.getElementById('atlasGrid');
+  const cards = [...grid.querySelectorAll('.bird-card')];
+  if (!cards.length) return;
+  const uniqTops = [...new Set(cards.map(c => c.offsetTop))].sort((a, b) => a - b);
+  const rowOf = {}; uniqTops.forEach((t, i) => { rowOf[t] = i; });
+  const PER_ROW = 90, MAX_ROW = 10;
+  cards.forEach(c => {
+    c.classList.remove('entering');
+    c.style.animationDelay = (lead + Math.min(rowOf[c.offsetTop] || 0, MAX_ROW) * PER_ROW) + 'ms';
+  });
+  void grid.offsetWidth;
+  cards.forEach(c => c.classList.add('entering'));
+  clearTimeout(atlasEntranceT);
+  atlasEntranceT = setTimeout(() => {
+    cards.forEach(c => { c.classList.remove('entering'); c.style.animationDelay = ''; });
+  }, lead + MAX_ROW * PER_ROW + 540);
+}
+
+wireSeg(document.getElementById('atlasSort'), btn => {
+  atlasSortMode = btn.dataset.sort;
+  renderAtlas(true);
+});
+
+/* Time window: re-render all three data views. */
 wireSeg(document.getElementById('winPick'), btn => {
   windowH = +btn.dataset.h;
-  renderGallery();
-  renderTimeline();
+  renderCollage(currentView === 0);
+  renderStatsLists();
+  drawHistograms(currentView === 1);
+  renderAtlas(currentView === 2);
 });
 
 /* ============ Configuration ============ */
@@ -764,8 +1374,8 @@ wireSeg(themeSeg, btn => {
   try { localStorage.setItem('birdwatch:theme', t); } catch (e) {}
 });
 
-[['pubRange','pubVal', v => v + '%'], ['revRange','revVal', v => v + '%'],
- ['coolRange','coolVal', v => v + ' s'], ['capRange','capVal', v => v]]
+[['pubRange', 'pubVal', v => v + '%'], ['revRange', 'revVal', v => v + '%'],
+ ['coolRange', 'coolVal', v => v + ' s'], ['capRange', 'capVal', v => v]]
 .forEach(([r, o, f]) => {
   const range = document.getElementById(r), out = document.getElementById(o);
   range.addEventListener('input', () => { out.textContent = f(range.value); });
@@ -786,18 +1396,27 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   }, 2600);
 });
 
-/* ============ Firmware hookup ============
-   When the ESP32 serves this page, /api/status answers and the demo
-   note disappears; real values replace the samples. */
+/* ============ Firmware hookup ============ */
 fetch('/api/status').then(r => r.ok ? r.json() : null).then(s => {
   if (!s) return;
   document.getElementById('demoNote').style.display = 'none';
 }).catch(() => {});
 
-renderGallery();
-renderTimeline();
-addEventListener('resize', () => document.querySelectorAll('.window-pick, .slider, .seg').forEach(placePill));
-addEventListener('load', () => document.querySelectorAll('.window-pick, .slider, .seg').forEach(placePill));
+/* ============ Boot ============ */
+renderStatsLists();
+drawHistograms(false);
+renderAtlas(false);
+renderCollage(true);
+
+let resizeT = null;
+addEventListener('resize', () => {
+  document.querySelectorAll('.window-pick, .slider, .seg, .atlas-sort').forEach(placePill);
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => { renderCollage(false); drawHistograms(false); }, 160);
+});
+addEventListener('load', () => {
+  document.querySelectorAll('.window-pick, .slider, .seg, .atlas-sort').forEach(placePill);
+});
 </script>
 </body>
 </html>
