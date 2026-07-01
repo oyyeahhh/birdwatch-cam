@@ -1,4 +1,4 @@
-# BirdWatch Cam — Design Outline (v3.1)
+# BirdWatch Cam — Design Outline (v3.2)
 ### Image-based bird identification on the DFRobot DFR1154 ESP32-S3 AI Camera, published to a public webpage
 
 **Inspiration:** AvianVisitors (BirdNET-Pi) — a live collage of birds detected near a window
@@ -10,6 +10,10 @@
 3. Webpage includes a **Diagnostics tab**; detections below **80% confidence** display their confidence percentage
 4. Architecture is **multi-camera / multi-site ready** from day one (every record carries a `device_id`)
 5. Each camera has a **Configuration tab** with a sharing mode selector — schools can run fully local (opt out of public sharing) while still supporting diagnostics
+6. Gallery ships with a **small bundled set of common-species illustrations** used as the species-card image until a real photo of that species clears the quality bar (see Section 9)
+
+**Changes in v3.2:**
+- Open question #7 resolved: bundle a small illustration set for common feeder species (decision locked in as #6 above)
 
 **Changes in v3.1** (from repo verification of `ai_repository` and AvianVisitors):
 - Starting firmware updated from v3.2.0 to **v3.2.5** (`ai_camera/firmware/standalone/ESP32_AI_Camera_v3_2_5/`), the newest standalone version in this repo
@@ -165,7 +169,9 @@ Static site on Netlify/Vercel/GitHub Pages reading from Supabase. Four tabs:
 
 **Gallery (default):** hero panel with most recent visitor, species cards (visit count, first/last seen), amber badges under 80%. Camera/location filter appears when multiple Full Cloud devices exist.
 
-**Species card display policy:** through-window photos will sometimes be blurry or badly framed, so a card shows the **best-ever photo** of that species (highest confidence, or manually pinned from the review workflow) rather than the most recent capture. Optionally, fall back to a stock illustration when no photo of a species clears a quality bar — the pattern AvianVisitors uses for its entire collage (498 bundled illustrations, 249 species; theirs are selected by audio detection). The hero panel still shows the actual latest capture, since "what's at the feeder right now" is the point of that panel.
+**Species card display policy:** through-window photos will sometimes be blurry or badly framed, so a card shows the **best-ever photo** of that species (highest confidence, or manually pinned from the review workflow) rather than the most recent capture. When no photo of a species has cleared the quality bar yet, the card falls back to a **bundled illustration** — the pattern AvianVisitors uses for its entire collage (498 bundled illustrations, 249 species; theirs are selected by audio detection). The hero panel still shows the actual latest capture, since "what's at the feeder right now" is the point of that panel.
+
+**Bundled illustration set (decided):** ship ~20–25 illustrations covering the common feeder species for the pilot region (for northern NJ: Northern Cardinal, Blue Jay, American Goldfinch, House Finch, House Sparrow, Mourning Dove, Carolina Chickadee, Black-capped Chickadee, Tufted Titmouse, Downy Woodpecker, Red-bellied Woodpecker, White-breasted Nuthatch, Dark-eyed Junco, American Robin, Carolina Wren, Song Sparrow, White-throated Sparrow, European Starling, Common Grackle, Red-winged Blackbird, House Wren, Northern Mockingbird). Illustrations are static assets in the public frontend and copied to each camera's SD card for the local Gallery, keyed by scientific name so both UIs resolve them identically. A detection of a species outside the bundle simply shows its photo (or a generic bird silhouette until one clears the bar). Licensing note: generate the set ourselves (as AvianVisitors did with the Gemini API) or use public-domain sources, so schools can reuse the assets freely; illustrations should be visually labeled as illustrations so students don't mistake them for the camera's own capture.
 
 **Timeline:** today's visits, per camera or combined.
 
@@ -190,7 +196,7 @@ Start from standalone v3.2.5. Add frame-differencing trigger, two-stage ID with 
 Stand up Supabase (devices/detections/heartbeats + mode enforcement policy), implement heartbeat and detection publishing gated by mode, **enable `ssl_validation.h`'s pinned root CA path as the default and extend the CA bundle to Supabase**, build the public site with Gallery + Diagnostics, deploy to Netlify. Success = flipping one camera to Full Cloud puts its birds on the public URL; flipping to Diagnostics Only keeps birds local while the camera stays visible on central Diagnostics.
 
 **Phase 3 — Polish & scale**
-Timeline/Stats tabs, review-queue workflow (including pinning a species' best photo), prompt refinement from real misidentifications, admin login for central Diagnostics, mDNS/`.local` naming for school networks, second-site pilot to validate multi-device + opt-out end to end.
+Timeline/Stats tabs, review-queue workflow (including pinning a species' best photo), the bundled illustration set (~20–25 regional feeder species, Section 9), prompt refinement from real misidentifications, admin login for central Diagnostics, mDNS/`.local` naming for school networks, second-site pilot to validate multi-device + opt-out end to end.
 
 ## 12. Risks & Mitigations
 
@@ -205,7 +211,7 @@ Timeline/Stats tabs, review-queue workflow (including pinning a species' best ph
 | API cost creep | Two-stage gating, per-device daily cap surfaced in Diagnostics |
 | Wi-Fi dropouts | Queue detections on SD, retry; offline visible via heartbeat age |
 | Blocking `loop()` starves web UI | Async state machine, `vTaskDelay(1)` yield pattern |
-| Blurry/unflattering species photos | Best-ever photo per card, review-queue pinning, optional illustration fallback |
+| Blurry/unflattering species photos | Best-ever photo per card, review-queue pinning, bundled illustration fallback |
 | Multi-site key management | Per-device revocable API keys |
 
 ## 13. Remaining Open Questions
@@ -216,4 +222,5 @@ Timeline/Stats tabs, review-queue workflow (including pinning a species' best ph
 4. `device_id` naming convention (suggest `org-site-window`, e.g., `yst-nj-lab`)
 5. Domain: free `*.netlify.app` or `birdwatch.cije.org`?
 6. Should the central Diagnostics tab be public or behind an admin login? (Recommendation: login.)
-7. Illustration fallback (Section 9): bundle a small set of common-species illustrations like AvianVisitors, or photos-only until a real capture exists? (Photos-only is simpler for v1; the fallback can wait for Phase 3.)
+
+~~7. Illustration fallback~~ — **Decided (v3.2):** bundle a small set of common-species illustrations; see Section 9 for the species list, asset placement, and licensing note.
