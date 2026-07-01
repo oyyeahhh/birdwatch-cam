@@ -1,32 +1,44 @@
 # Bird illustrations — attribution and license
 
-The PNG cutout illustrations in this directory come from
+This directory mixes two sources. Filenames are kebab-case scientific names.
+
+## 1. AvianVisitors set (13 files, CC BY-NC-SA 4.0)
+
+These PNG cutouts come from
 [AvianVisitors](https://github.com/Twarner491/AvianVisitors) by Teddy Warner
-(built on [BirdNET-Pi](https://github.com/mcguirepr89/BirdNET-Pi)), and are
-used here under the repository's
-**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
-(CC BY-NC-SA 4.0)** license: https://creativecommons.org/licenses/by-nc-sa/4.0/
+(built on [BirdNET-Pi](https://github.com/mcguirepr89/BirdNET-Pi)), used under
+**CC BY-NC-SA 4.0**: https://creativecommons.org/licenses/by-nc-sa/4.0/
+Changes: resized to 640 px max dimension.
 
-Unlike the rest of this repository (MIT), the images in this directory remain
-under CC BY-NC-SA 4.0:
+- Attribution — keep this notice with the images.
+- NonCommercial — fine for CIJE's school/classroom use; do not sell.
+- ShareAlike — adaptations of these files stay under the same license.
 
-- **Attribution** — keep this notice with the images.
-- **NonCommercial** — fine for CIJE's school/classroom use; do not sell.
-- **ShareAlike** — if you adapt or redistribute the images, they must stay
-  under this same license.
+Files: agelaius-phoeniceus, dryobates-pubescens, haemorhous-mexicanus,
+junco-hyemalis, melospiza-melodia, mimus-polyglottos, passer-domesticus,
+sitta-carolinensis, spinus-tristis, sturnus-vulgaris, troglodytes-aedon,
+turdus-migratorius, zenaida-macroura.
 
-## Changes made
+## 2. Vintage natural-history plates (9 files, public domain)
 
-Resized from the originals to a 640 px maximum dimension (matching this
-project's thumbnail spec). Filenames are unchanged: kebab-case scientific
-name, perched pose (upstream also has `-2` in-flight variants).
+Cutouts we produced from public-domain / no-known-restrictions scans on
+Wikimedia Commons (background removed, cropped, resized to 640 px max).
+The underlying artworks are out of copyright; our modifications are
+released to the public domain (CC0).
 
-## Coverage
+| File | Source artwork |
+|---|---|
+| cardinalis-cardinalis | Ann Lee watercolor, Royal Albert Memorial Museum (released CC0), via Commons |
+| cyanocitta-cristata | New York State Museum *Annual report* (1912) plate, via BHL/Commons (no known restrictions) |
+| baeolophus-bicolor | *Birds of New York* Plate 103, Louis Agassiz Fuertes, via Commons (public domain) |
+| poecile-atricapillus | *Illustrations of the birds of California, Texas, Oregon…* (Cassin, 1850s) "The Northern Chickadee" plate, via Commons (public domain) |
+| poecile-carolinensis | *Bird-Lore* (1916) chickadee plate, Louis Agassiz Fuertes, via BHL/Commons (no known restrictions) |
+| melanerpes-carolinus | Alexander Wilson, *American Ornithology* woodpecker plate, via BHL/Commons (no known restrictions) |
+| thryothorus-ludovicianus | New York State Museum *Annual report* (1912) wren plate, Louis Agassiz Fuertes, via BHL/Commons (no known restrictions) |
+| zonotrichia-albicollis | L. Prang & Co. chromolithograph, *Singing Birds* sparrow plate (1874), via Commons (public domain) |
+| quiscalus-quiscula | "Creaker the Purple Grackle", Louis Agassiz Fuertes, via Commons (public domain) |
 
-13 of the ~22 species in our northern-NJ feeder bundle exist in the upstream
-set (it is US-West-focused). Missing eastern species — Northern Cardinal,
-Blue Jay, Carolina/Black-capped Chickadee, Tufted Titmouse, Red-bellied
-Woodpecker, Carolina Wren, White-throated Sparrow, Common Grackle — can be
-generated with upstream's `frame/generate_illustrations.py` (Gemini API)
-in the same visual style, or replaced with public-domain art. Until then the
-local UI falls back to its built-in SVG silhouettes for those species.
+These nine may be replaced later by Gemini-generated illustrations in the
+AvianVisitors kachō-e style (see upstream's `frame/generate_illustrations.py`)
+for tighter visual consistency; the vintage plates are the license-cleanest
+option and match the aesthetic well in the meantime.
