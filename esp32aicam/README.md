@@ -22,9 +22,13 @@ Audio/TTS is stripped entirely: the PDM mic and camera DMA share `I2S_NUM_0`.
 
 Arduino IDE or CLI, ESP32 core 3.x, ArduinoJson 7.
 
+Board: **DFRobot ESP32-S3 AI CAM (DFR1154)** — select "ESP32S3 Dev Module"
+with USB CDC On Boot Enabled, Flash 16MB, PSRAM: OPI PSRAM, Partition:
+Huge APP. Full walkthrough in [docs/SETUP.md](../docs/SETUP.md).
+
 ```
-arduino-cli compile --fqbn "esp32:esp32:esp32s3:PSRAM=opi,PartitionScheme=huge_app" esp32aicam
-arduino-cli upload  --fqbn "esp32:esp32:esp32s3:PSRAM=opi,PartitionScheme=huge_app" -p /dev/cu.usbmodem* esp32aicam
+arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=huge_app" esp32aicam
+arduino-cli upload  --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=huge_app" -p /dev/cu.usbmodem* esp32aicam
 ```
 
 ## SD card layout
