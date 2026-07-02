@@ -8,7 +8,8 @@ These PNG cutouts come from
 [AvianVisitors](https://github.com/Twarner491/AvianVisitors) by Teddy Warner
 (built on [BirdNET-Pi](https://github.com/mcguirepr89/BirdNET-Pi)), used under
 **CC BY-NC-SA 4.0**: https://creativecommons.org/licenses/by-nc-sa/4.0/
-Changes: resized to 640 px max dimension.
+Changes: resized to 640 px max dimension. Each species has a perched
+cutout (`<slug>.png`) and an in-flight variant (`<slug>-2.png`).
 
 - Attribution — keep this notice with the images.
 - NonCommercial — fine for CIJE's school/classroom use; do not sell.
