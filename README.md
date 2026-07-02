@@ -204,13 +204,13 @@ Pull requests and issue reports are welcome. Please read [CONTRIBUTING.md](CONTR
 
 For CIJE educators and collaborators — the [Quick Start Guide](docs/quick_start_guide.pdf) covers setup from scratch without requiring any firmware background.
 
+https://github.com/Twarner491/AvianVisitors/tree/avian-visitors
 ---
 
 ## Credits
 
 - **Robert Jones** — Firmware architecture and developmentEngineer, former CIJE mentor
 - **Orly Nader** — Director of Innovation, CIJE
-- **Aryeh Laufer** — AI Process Consultant
 - **DFRobot** — DFR1154 hardware platform
 
 ---
