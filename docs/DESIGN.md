@@ -198,6 +198,8 @@ Stand up Supabase (devices/detections/heartbeats + mode enforcement policy), imp
 **Phase 3 — Polish & scale**
 Timeline/Stats tabs, review-queue workflow (including pinning a species' best photo), the bundled illustration set (~20–25 regional feeder species, Section 9), prompt refinement from real misidentifications, admin login for central Diagnostics, mDNS/`.local` naming for school networks, second-site pilot to validate multi-device + opt-out end to end.
 
+**Saved for Phase 3 — detail modal as the photo/review home:** the local UI's species detail modal (built in Phase 1, with the perched/in-flight pose toggle) becomes the place where real camera captures meet the illustrations: it shows the species' best SD-card photo alongside the sketch, lists that species' recent captures, and hosts the review/pinning actions ("pin as best photo", "reject misidentification"). One surface then covers the whole loop — see the bird, judge the photos, curate the gallery — instead of a separate review screen.
+
 ## 12. Risks & Mitigations
 
 | Risk | Mitigation |
