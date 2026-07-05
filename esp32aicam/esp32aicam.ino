@@ -433,12 +433,16 @@ void handleApiCapture() {
 }
 
 // MJPEG preview for aiming the camera at the feeder (from v3.2.5 pattern).
+// Streaming monopolizes the loop (detection pauses), so a single viewer
+// is capped at 90s — the local UI's Live tab has a "restart preview"
+// button for longer aiming sessions.
 void handleStream() {
   WiFiClient client = server.client();
+  unsigned long streamEnd = millis() + 90000UL;
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: multipart/x-mixed-replace; boundary=frame");
   client.println();
-  while (client.connected()) {
+  while (client.connected() && millis() < streamEnd) {
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) break;
     client.println("--frame");

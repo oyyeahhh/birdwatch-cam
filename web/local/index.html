@@ -577,7 +577,45 @@
   .modal-info .desc { font: 13px/1.55 ui-serif, Georgia, serif; color: var(--ink); margin: 0 0 16px; }
   .modal-actions { display: flex; gap: 6px; }
 
-  /* ============ View 4 — Camera health ============ */
+  /* ============ View 4 — Live ============
+     The MJPEG preview sits in the same recessed paper well as the
+     modal sketch. The stream only runs while this view is active —
+     streaming pauses detection on the camera. */
+  .live-frame {
+    max-width: 820px; margin: 0 auto;
+    background: var(--paper-2); border-radius: 10px;
+    box-shadow: var(--recess);
+    padding: 14px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 300px;
+    position: relative;
+  }
+  .live-frame img {
+    max-width: 100%; border-radius: 6px; display: block;
+    box-shadow: 0 2px 10px rgba(26,22,18,0.18);
+  }
+  .live-frame .live-empty {
+    font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.18em; text-transform: uppercase;
+    text-align: center; padding: 60px 20px;
+  }
+  .live-cap {
+    max-width: 820px; margin: 10px auto 0;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  }
+  .live-cap .k {
+    font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em;
+  }
+  .live-cap button {
+    background: var(--paper-2); border: 0; color: var(--ink);
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.10em; text-transform: lowercase;
+    box-shadow: var(--raised);
+  }
+
+  /* ============ View 5 — Camera health ============ */
   .diag-frame { max-width: 1000px; margin: 0 auto; }
   .demo-note {
     font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
@@ -832,7 +870,19 @@
       <div class="atlas-grid" id="atlasGrid"></div>
     </section>
 
-    <!-- ========== View 4 — Camera health ========== -->
+    <!-- ========== View 4 — Live ========== -->
+    <section class="view" id="v3live" aria-label="Live view">
+      <div class="live-frame" id="liveFrame">
+        <div class="live-empty" id="liveEmpty">connecting to the camera&hellip;</div>
+        <img id="liveImg" alt="live camera view" style="display:none">
+      </div>
+      <div class="live-cap">
+        <span class="k">what the camera sees right now &middot; detection pauses while you watch</span>
+        <button type="button" id="liveRestart">restart preview</button>
+      </div>
+    </section>
+
+    <!-- ========== View 5 — Camera health ========== -->
     <section class="view" id="v3" aria-label="Camera health">
       <div class="diag-frame">
         <p class="demo-note" id="demoNote">showing demo data — firmware /api not connected</p>
@@ -998,8 +1048,9 @@
   <button type="button" data-i="0" aria-current="true">collage</button>
   <button type="button" data-i="1">stats</button>
   <button type="button" data-i="2">atlas</button>
-  <button type="button" data-i="3">health</button>
-  <button type="button" data-i="4">config</button>
+  <button type="button" data-i="3">live</button>
+  <button type="button" data-i="4">health</button>
+  <button type="button" data-i="5">config</button>
 </nav>
 
 <script>
@@ -1123,7 +1174,7 @@ function wireSeg(box, onPick) {
 /* ============ Views ============
    Titles follow the AvianVisitors pattern: collage + stats share one
    title (no fade between them); atlas gets its own. */
-const VIEW_TITLES = ['Seen Recently', 'Seen Recently', 'The Life List', 'Camera Health', 'Configuration'];
+const VIEW_TITLES = ['Seen Recently', 'Seen Recently', 'The Life List', 'Right Now', 'Camera Health', 'Configuration'];
 const SLIDE_MS = 480;
 const SWITCH_LEAD = SLIDE_MS - 100;
 const STATS_LEAD = SLIDE_MS - 200;
@@ -1141,23 +1192,47 @@ function setTitleForView(i) {
     head.classList.remove('swap-out');
   }, 220);
 }
+const LIVE_IDX = 3;
+function setLiveStream(on) {
+  const img = document.getElementById('liveImg');
+  const empty = document.getElementById('liveEmpty');
+  if (on) {
+    empty.style.display = '';
+    empty.textContent = 'connecting to the camera\u2026';
+    img.onload = () => { empty.style.display = 'none'; img.style.display = ''; };
+    img.onerror = () => {
+      img.style.display = 'none';
+      empty.style.display = '';
+      empty.textContent = 'no camera connected \u2014 the preview appears when the firmware serves /stream';
+    };
+    img.src = '/stream?t=' + Math.floor(performance.now());
+  } else {
+    img.onload = img.onerror = null;
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  }
+}
 function goView(i) {
   const switching = i !== currentView;
   currentView = i;
   views.style.transform = `translateX(-${i * 100}%)`;
   setTitleForView(i);
+  setLiveStream(i === LIVE_IDX);
   if (!switching) return;
   if (i === 0) playCollageEntrance();
   else if (i === 1) playStatsEntrance(STATS_LEAD);
   else if (i === 2) playAtlasEntrance(SWITCH_LEAD);
 }
+document.getElementById('liveRestart').addEventListener('click', () => {
+  if (currentView === LIVE_IDX) { setLiveStream(false); setLiveStream(true); }
+});
 wireSeg(document.getElementById('slider'), btn => goView(+btn.dataset.i));
 document.getElementById('devicePill').addEventListener('click', () => {
   const s = document.getElementById('slider');
   s.querySelectorAll('button').forEach(b => b.removeAttribute('aria-current'));
-  s.querySelector('[data-i="3"]').setAttribute('aria-current', 'true');
+  s.querySelector('[data-i="4"]').setAttribute('aria-current', 'true');
   placePill(s);
-  goView(3);
+  goView(4);
 });
 
 /* ============ View 1 — Collage ============
