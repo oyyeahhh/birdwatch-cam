@@ -267,10 +267,18 @@ void birdLoop() {
   if (motion && gatesOpen) {
     Serial.printf("Motion: %d cells changed - pipeline start\n", MotionDetector::lastChangedCells);
     BirdConfig::triggersToday++;
-    String path;
-    bool saved = sdOk && savePipelineImage(fb, path);
+    // The triggering frame is mid-motion (a bird still landing, wings
+    // blurred). Let the subject settle, then capture a fresh frame for
+    // the analysis - that's the photo worth identifying and keeping.
     esp_camera_fb_return(fb);
-    if (saved) runPipeline(path);
+    delay(450);
+    camera_fb_t* shot = esp_camera_fb_get();
+    if (shot) {
+      String path;
+      bool saved = sdOk && savePipelineImage(shot, path);
+      esp_camera_fb_return(shot);
+      if (saved) runPipeline(path);
+    }
     cooldownUntil = millis() + (unsigned long)BirdConfig::cooldownS * 1000;
     MotionDetector::reset();
     return;
@@ -481,12 +489,22 @@ void setup() {
     while (1) { delay(1000); }
   }
 
-  if (!WiFiManager::connect(CredentialsManager::getWiFiSSID().c_str(),
-                            CredentialsManager::getWiFiPassword().c_str())) {
-    // Wrong or stale credentials (e.g. the school changed its Wi-Fi
-    // password): reopen the setup wizard instead of bricking until a
-    // 10s BOOT-button factory reset.
-    Serial.println("ERROR: WiFi failed - reopening setup wizard");
+  // Routers often refuse quick reassociations right after a reboot, so a
+  // single failed round doesn't mean the credentials are bad. Retry a few
+  // rounds; only then assume wrong/stale credentials (e.g. the school
+  // changed its Wi-Fi password) and reopen the setup wizard rather than
+  // bricking until a 10s BOOT-button factory reset.
+  bool wifiUp = false;
+  for (int round = 1; round <= 3 && !wifiUp; round++) {
+    if (round > 1) {
+      Serial.printf("WiFi retry round %d/3 in 5s...\n", round);
+      delay(5000);
+    }
+    wifiUp = WiFiManager::connect(CredentialsManager::getWiFiSSID().c_str(),
+                                  CredentialsManager::getWiFiPassword().c_str());
+  }
+  if (!wifiUp) {
+    Serial.println("ERROR: WiFi failed after 3 rounds - reopening setup wizard");
     CredentialsManager::startSetupWizard();
     ESP.restart();
   }
