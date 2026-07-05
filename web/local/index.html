@@ -530,6 +530,7 @@
     z-index: 2;
   }
   .pose-toggle[data-unavailable="true"] { display: none; }
+  .pose-toggle button[data-hidden="true"] { display: none; }
   .pose-toggle button {
     background: transparent; border: 0; color: var(--ink-soft);
     width: 30px; height: 26px; padding: 0; border-radius: 999px;
@@ -1023,6 +1024,14 @@
             </svg>
             <span class="tip">in flight</span>
           </button>
+          <button type="button" data-pose="photo" aria-label="real photo" data-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1.5" y="4.5" width="13" height="9" rx="1.6"/>
+              <circle cx="8" cy="9" r="2.4"/>
+              <path d="M5.2 4.5 L6.1 2.9 H9.9 L10.8 4.5"/>
+            </svg>
+            <span class="tip">real photo</span>
+          </button>
         </div>
       </div>
       <div class="modal-info">
@@ -1129,9 +1138,14 @@ const FLIGHT_AR = {
 };
 const flightAr = sp => sp.img ? FLIGHT_AR[sp.img.slice(0, -4)] : undefined;
 function birdArt(sp, alt, eager, pose) {
+  const load = eager ? 'eager' : 'lazy';
+  // Real captured photo (served from the camera SD, /birds/IMG_n.jpg).
+  if (pose === 'photo' && sp.photoUrl)
+    return `<img src="${sp.photoUrl}" alt="${alt || ''} — camera photo" loading="${load}" decoding="async">`;
   if (!sp.img) return birdSvg(sp.pal);
-  const file = pose === 2 && flightAr(sp) ? sp.img.slice(0, -4) + '-2.png' : sp.img;
-  return `<img src="${ILLO_DIR}${file}" alt="${alt || ''}" loading="${eager ? 'eager' : 'lazy'}" decoding="async">`;
+  const flight = (pose === 2 || pose === '2') && flightAr(sp);
+  const file = flight ? sp.img.slice(0, -4) + '-2.png' : sp.img;
+  return `<img src="${ILLO_DIR}${file}" alt="${alt || ''}" loading="${load}" decoding="async">`;
 }
 
 /* ============ Helpers ============ */
@@ -1622,7 +1636,15 @@ function setModalPose(pose, fade) {
   poseToggle.querySelectorAll('button').forEach(b =>
     b.dataset.pose === String(pose) ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current'));
   placePill(poseToggle);
-  const swap = () => { modalArt.innerHTML = birdArt(modalSpecies, modalSpecies.com, true, pose); };
+  const swap = () => {
+    modalArt.innerHTML = birdArt(modalSpecies, modalSpecies.com, true, pose);
+    // If the real photo fails to load (e.g. served-elsewhere demo), fall
+    // back to the illustration rather than showing a broken image.
+    if (pose === 'photo') {
+      const el = modalArt.querySelector('img');
+      if (el) el.onerror = () => setModalPose(1, false);
+    }
+  };
   const img = modalArt.querySelector('img');
   if (fade && img) {
     img.classList.add('swapping');
@@ -1651,8 +1673,17 @@ function openModal(sp, pose) {
     (sp.photo ? '' : ' No camera photo has cleared the quality bar yet; the card shows the bundled illustration.');
   document.getElementById('modalWiki').href = wikiUrl(sp.sci);
   document.getElementById('modalEbird').href = ebirdUrl(sp);
-  poseToggle.dataset.unavailable = flightAr(sp) ? 'false' : 'true';
-  setModalPose(flightAr(sp) ? (pose || 1) : 1, false);
+  // Per-button availability: perched always; flight if a -2 variant exists;
+  // real photo if the camera has captured one for this species.
+  const avail = { '1': true, '2': !!flightAr(sp), 'photo': !!sp.photoUrl };
+  let shown = 0;
+  poseToggle.querySelectorAll('button').forEach(b => {
+    const ok = avail[b.dataset.pose];
+    b.dataset.hidden = ok ? 'false' : 'true';
+    if (ok) shown++;
+  });
+  poseToggle.dataset.unavailable = shown > 1 ? 'false' : 'true';
+  setModalPose(pose && avail[String(pose)] ? pose : 1, false);
   detailModal.classList.add('is-open');
   detailModal.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => placePill(poseToggle));
@@ -1662,7 +1693,10 @@ function closeModal() {
   detailModal.setAttribute('aria-hidden', 'true');
 }
 poseToggle.querySelectorAll('button').forEach(btn =>
-  btn.addEventListener('click', () => setModalPose(+btn.dataset.pose, true)));
+  btn.addEventListener('click', () => {
+    const p = btn.dataset.pose;
+    setModalPose(p === 'photo' ? 'photo' : +p, true);
+  }));
 detailModal.addEventListener('click', ev => { if (ev.target.closest('[data-close]')) closeModal(); });
 addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
 
@@ -1756,12 +1790,19 @@ function speciesFromDetections(dets) {
     const s = by[key] || (by[key] = {
       com: d.common_name || key, sci: d.scientific_name || '',
       conf: 0, allN: 0, firstTs: Infinity, lastTs: 0, det: [],
+      bestConf: -1, photoUrl: '',
     });
     s.allN++;
     const ts = (d.ts || 0) * 1000;
     s.det.push(Math.max(0.02, (now - ts) / 3600e3));
     if (ts >= s.lastTs) { s.lastTs = ts; s.conf = d.confidence_pct || 0; }
     if (ts < s.firstTs) s.firstTs = ts;
+    // Best-ever photo for this species = highest-confidence capture (design
+    // doc §9). Powers the "real photo" toggle in the detail modal.
+    if (d.image && (d.confidence_pct || 0) >= s.bestConf) {
+      s.bestConf = d.confidence_pct || 0;
+      s.photoUrl = d.image;
+    }
   });
   return Object.values(by).map(s => {
     const slug = slugifySci(s.sci);
@@ -1770,6 +1811,7 @@ function speciesFromDetections(dets) {
       firstDays: Math.max(0, Math.floor((now - s.firstTs) / 864e5)),
       det: s.det.sort((a, b) => a - b),
       pal: GENERIC_PAL,
+      photoUrl: s.photoUrl,
     };
     if (PERCHED_AR[slug]) { sp.img = slug + '.png'; sp.ar = PERCHED_AR[slug]; }
     return sp;
