@@ -90,6 +90,9 @@ public:
 
 private:
   // Rebuild the RAM ring from the newest lines of the JSONL after boot.
+  // The scratch buffer lives on the heap: RING Detection objects are ~6KB,
+  // which overflows the 8KB loop-task stack (double-exception panic seen
+  // on hardware when this was a local array).
   static void loadTail() {
     File f = SD_MMC.open("/birds/detections.jsonl", FILE_READ);
     if (!f) return;
@@ -99,7 +102,8 @@ private:
     size_t from = sz > RING * APPROX_LINE ? sz - RING * APPROX_LINE : 0;
     f.seek(from);
     if (from > 0) f.readStringUntil('\n');   // skip the partial line
-    Detection tmp[RING];
+    Detection* tmp = new Detection[RING];
+    if (!tmp) { f.close(); return; }
     int n = 0;
     while (f.available()) {
       String line = f.readStringUntil('\n');
@@ -128,6 +132,7 @@ private:
       ring[i] = tmp[((n - 1 - i) % RING + RING) % RING];
     }
     ringCount = have;
+    delete[] tmp;
   }
 };
 

@@ -44,6 +44,15 @@ struct BirdResult {
 
 class BirdID {
 public:
+  // Escape a user-editable string for embedding in the hand-built JSON body.
+  static String escapeJson(String s) {
+    s.replace("\\", "\\\\");
+    s.replace("\"", "\\\"");
+    s.replace("\n", " ");
+    s.replace("\r", " ");
+    return s;
+  }
+
   static WiFiClientSecure* createSecureClient() {
     WiFiClientSecure* client = new WiFiClientSecure();
     switch (currentSSLMode) {
@@ -73,7 +82,7 @@ public:
     BirdResult r;
     String prompt =
       "You are a bird identification expert. This photo is from a fixed camera at a "
-      + regionHint +
+      + escapeJson(regionHint) +
       ", photographed through a window, so expect some blur and glare - lower your "
       "confidence for blurry or ambiguous shots. Identify the most prominent bird. "
       "Respond with JSON only, exactly this shape: "

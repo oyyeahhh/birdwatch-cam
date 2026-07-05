@@ -51,10 +51,13 @@
 #define SSL_SECURITY_MODE 0
 int currentSSLMode = SSL_SECURITY_MODE;
 
-// ---- First-run defaults (captive portal replaces these) ----
-#define DEFAULT_WIFI_SSID     "YourSSID"
+// ---- First-run defaults ----
+// Leave the sentinels as-is to get the captive-portal setup wizard on
+// first boot (credentials_manager.h treats "YourWiFiSSID" / "sk-Your..."
+// as unset). Replace them only to bake credentials in at compile time.
+#define DEFAULT_WIFI_SSID     "YourWiFiSSID"
 #define DEFAULT_WIFI_PASSWORD "YourPassword"
-#define DEFAULT_OPENAI_API_KEY "sk-..."
+#define DEFAULT_OPENAI_API_KEY "sk-Your-OpenAI-Key"
 #define DEFAULT_DEVICE_NAME   "BirdWatch-Cam"
 
 // ---- DFR1154 pin map (from v3.2.5) ----
@@ -93,6 +96,7 @@ volatile bool analysisInProgress = false;   // referenced by error_handling.h Wi
 
 // ---- Runtime state ----
 unsigned long bootMillis = 0;
+bool sdOk = false;
 unsigned long lastMotionCheck = 0;
 unsigned long cooldownUntil = 0;
 unsigned long lastLightRead = 0;
@@ -159,21 +163,23 @@ void setupCamera() {
 }
 
 // ---- Detection pipeline (runs when motion fires and all gates pass) ----
-void runPipeline(camera_fb_t* fb) {
-  analysisInProgress = true;
-  BirdConfig::triggersToday++;
-
-  // 1. Save the triggering frame to SD.
-  String path = Detections::newImagePath();
+// The frame is saved to SD and RELEASED before the slow API calls, so the
+// single camera frame buffer isn't held hostage for the 10-30s round trip.
+bool savePipelineImage(camera_fb_t* fb, String& path) {
+  path = Detections::newImagePath();
   File f = SD_MMC.open(path, FILE_WRITE);
   if (!f) {
     noteError("SD write failed for " + path);
-    analysisInProgress = false;
-    return;
+    return false;
   }
   f.write(fb->buf, fb->len);
   f.close();
   Serial.printf("Pipeline: saved %s (%u bytes)\n", path.c_str(), fb->len);
+  return true;
+}
+
+void runPipeline(String path) {
+  analysisInProgress = true;
 
   // 2. Stage 1 - cheap bird gate.
   BirdConfig::apiCallsToday++;
@@ -256,8 +262,11 @@ void birdLoop() {
                    && WiFiManager::isCurrentlyConnected();
   if (motion && gatesOpen) {
     Serial.printf("Motion: %d cells changed - pipeline start\n", MotionDetector::lastChangedCells);
-    runPipeline(fb);
+    BirdConfig::triggersToday++;
+    String path;
+    bool saved = sdOk && savePipelineImage(fb, path);
     esp_camera_fb_return(fb);
+    if (saved) runPipeline(path);
     cooldownUntil = millis() + (unsigned long)BirdConfig::cooldownS * 1000;
     MotionDetector::reset();
     return;
@@ -285,8 +294,9 @@ void handleApiStatus() {
   doc["ip"] = WiFi.localIP().toString();
   doc["free_heap"] = ESP.getFreeHeap();
   doc["psram_free"] = ESP.getFreePsram();
-  doc["sd_used_mb"] = (uint32_t)(SD_MMC.usedBytes() / 1048576ULL);
-  doc["sd_total_mb"] = (uint32_t)(SD_MMC.totalBytes() / 1048576ULL);
+  doc["sd_ok"] = sdOk;
+  doc["sd_used_mb"] = sdOk ? (uint32_t)(SD_MMC.usedBytes() / 1048576ULL) : 0;
+  doc["sd_total_mb"] = sdOk ? (uint32_t)(SD_MMC.totalBytes() / 1048576ULL) : 0;
   doc["lux"] = lastLux;
   doc["light_sensor"] = LightSensor::present;
   doc["daylight"] = daylight;
@@ -363,6 +373,10 @@ void handleApiConfigPost() {
 }
 
 void handleApiCapture() {
+  if (!sdOk) {
+    server.send(500, "application/json", "{\"error\":\"no SD card\"}");
+    return;
+  }
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) {
     server.send(500, "application/json", "{\"error\":\"capture failed\"}");
@@ -418,17 +432,21 @@ void setup() {
   LightSensor::begin();
 
   SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
-  if (!SD_MMC.begin("/sdcard", true)) {
-    Serial.println("ERROR: SD Card Mount Failed");
-    return;
+  if (SD_MMC.begin("/sdcard", true)) {
+    sdOk = true;
+    Serial.println("SD Card OK");
+  } else {
+    // Keep going: /stream, /api/status and configuration still work,
+    // so the camera can be aimed and diagnosed before a card arrives.
+    Serial.println("WARNING: SD Card Mount Failed - no photos or web UI");
+    noteError("SD card not mounted");
   }
-  Serial.println("SD Card OK");
 
   setupCamera();
   Serial.println("Camera OK");
 
   BirdConfig::begin();
-  Detections::begin();
+  if (sdOk) Detections::begin();
   if (!MotionDetector::begin(800 / 8, 600 / 8)) {
     Serial.println("ERROR: motion detector init failed");
   }
@@ -441,8 +459,12 @@ void setup() {
 
   if (!WiFiManager::connect(CredentialsManager::getWiFiSSID().c_str(),
                             CredentialsManager::getWiFiPassword().c_str())) {
-    Serial.println("ERROR: WiFi failed");
-    while (1) { delay(1000); }
+    // Wrong or stale credentials (e.g. the school changed its Wi-Fi
+    // password): reopen the setup wizard instead of bricking until a
+    // 10s BOOT-button factory reset.
+    Serial.println("ERROR: WiFi failed - reopening setup wizard");
+    CredentialsManager::startSetupWizard();
+    ESP.restart();
   }
 
   // Local time for timestamps + midnight counter rollover (default US-East;
