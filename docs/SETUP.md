@@ -34,6 +34,18 @@ cp web/local/index.html /Volumes/SDCARD/web/index.html
 cp -r web/assets /Volumes/SDCARD/web/assets
 ```
 
+**Alternative — install the UI over Wi-Fi** (no card reader needed): if the
+camera is already flashed and on the network, push the files to it with the
+helper script instead of moving the card:
+
+```bash
+tools/push_web.sh 192.168.1.182     # the camera's IP
+```
+
+This uploads `index.html` and every illustration to the card via the
+firmware's `/api/upload` endpoint — the same way UI updates are delivered
+later without pulling the card.
+
 Insert the card into the camera **before** powering on. (Without it, the
 camera still boots and shows a plain fallback page, but nothing can be
 saved.)

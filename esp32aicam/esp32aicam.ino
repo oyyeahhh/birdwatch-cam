@@ -456,6 +456,48 @@ void handleStream() {
   }
 }
 
+// ---- File upload (push the web UI onto the SD card over Wi-Fi) ----
+// POST multipart to /api/upload?path=/web/... — writes the file to SD so
+// the UI can be installed or updated without pulling the card. Restricted
+// to the /web tree; parent directories are created as needed.
+File uploadFile;
+bool uploadOk = false;
+String uploadPathMsg;
+
+static void ensureParentDirs(const String& path) {
+  int slash = path.indexOf('/', 1);
+  while (slash > 0) {
+    String dir = path.substring(0, slash);
+    if (dir.length() && !SD_MMC.exists(dir)) SD_MMC.mkdir(dir);
+    slash = path.indexOf('/', slash + 1);
+  }
+}
+
+void handleUpload() {
+  HTTPUpload& up = server.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    uploadOk = false;
+    String path = server.hasArg("path") ? server.arg("path") : "";
+    // Safety: only under /web, no traversal.
+    if (!path.startsWith("/web/") || path.indexOf("..") >= 0) {
+      uploadPathMsg = "rejected path: " + path;
+      return;
+    }
+    if (!sdOk) { uploadPathMsg = "no SD card"; return; }
+    ensureParentDirs(path);
+    if (SD_MMC.exists(path)) SD_MMC.remove(path);
+    uploadFile = SD_MMC.open(path, FILE_WRITE);
+    uploadPathMsg = path;
+    uploadOk = (bool)uploadFile;
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) uploadFile.write(up.buf, up.currentSize);
+  } else if (up.status == UPLOAD_FILE_END) {
+    if (uploadFile) uploadFile.close();
+    Serial.printf("Upload: %s (%u bytes) %s\n", uploadPathMsg.c_str(),
+                  up.totalSize, uploadOk ? "ok" : "FAILED");
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -528,6 +570,10 @@ void setup() {
     ESP.restart();
   });
   server.on("/stream", HTTP_GET, handleStream);
+  server.on("/api/upload", HTTP_POST,
+            []() { server.send(uploadOk ? 200 : 500, "application/json",
+                               uploadOk ? "{\"ok\":true}" : "{\"error\":\"" + uploadPathMsg + "\"}"); },
+            handleUpload);
   server.onNotFound(WebFiles::handleNotFound);
   server.begin();
 
