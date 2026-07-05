@@ -163,10 +163,10 @@ void setupCamera() {
 }
 
 // ---- Detection pipeline (runs when motion fires and all gates pass) ----
-// The frame is saved to SD and RELEASED before the slow API calls, so the
-// single camera frame buffer isn't held hostage for the 10-30s round trip.
-bool savePipelineImage(camera_fb_t* fb, String& path) {
-  path = Detections::newImagePath();
+// Frames are written to SD and the camera buffer RELEASED before the slow
+// API calls, so the single frame buffer isn't held through the 10-30s
+// round trip.
+bool writeFrame(camera_fb_t* fb, const String& path) {
   File f = SD_MMC.open(path, FILE_WRITE);
   if (!f) {
     noteError("SD write failed for " + path);
@@ -174,29 +174,49 @@ bool savePipelineImage(camera_fb_t* fb, String& path) {
   }
   f.write(fb->buf, fb->len);
   f.close();
-  Serial.printf("Pipeline: saved %s (%u bytes)\n", path.c_str(), fb->len);
   return true;
 }
 
-void runPipeline(String path) {
+// Two candidate frames per trigger: the INSTANT frame (captured the moment
+// motion fires - catches a bird that only touches down for a fraction of a
+// second) and the SETTLED frame (~400ms later, sharper, the photo worth
+// keeping). The bird gate runs on the settled frame first; if it's already
+// empty - a brief visitor that left - we fall back to the instant frame.
+// The chosen frame is promoted to a permanent IMG_<id>.jpg; the other is
+// discarded. Net API cost equals the old single-frame path for a lingering
+// bird, plus one gate call only when a brief visitor forces the fallback.
+void runPipeline(String instantPath, String settledPath) {
   analysisInProgress = true;
 
-  // 2. Stage 1 - cheap bird gate.
-  BirdConfig::apiCallsToday++;
-  int gate = BirdID::stage1HasBird(path);
-  if (gate < 0) {
-    noteError("stage1 call failed");
-    SD_MMC.remove(path);
-    analysisInProgress = false;
-    return;
+  String chosen = "";
+  if (settledPath.length()) {
+    BirdConfig::apiCallsToday++;
+    int g = BirdID::stage1HasBird(settledPath);
+    if (g < 0) noteError("stage1 call failed (settled)");
+    else if (g == 1) chosen = settledPath;
   }
-  if (gate == 0) {
-    Serial.println("Pipeline: stage1 says no bird - discarding");
-    SD_MMC.remove(path);
+  if (chosen.length() == 0 && instantPath.length()) {
+    BirdConfig::apiCallsToday++;
+    int g = BirdID::stage1HasBird(instantPath);
+    if (g < 0) noteError("stage1 call failed (instant)");
+    else if (g == 1) { chosen = instantPath; Serial.println("Pipeline: brief visitor - using instant frame"); }
+  }
+  if (chosen.length() == 0) {
+    Serial.println("Pipeline: no bird in either frame - discarding");
+    if (instantPath.length()) SD_MMC.remove(instantPath);
+    if (settledPath.length() && settledPath != instantPath) SD_MMC.remove(settledPath);
     analysisInProgress = false;
     return;
   }
   BirdConfig::stage1PassToday++;
+
+  // Discard the unused candidate, promote the chosen one to a real slot.
+  String unused = (chosen == settledPath) ? instantPath : settledPath;
+  if (unused.length() && unused != chosen) SD_MMC.remove(unused);
+  String path = Detections::newImagePath();
+  if (SD_MMC.exists(path)) SD_MMC.remove(path);
+  if (!SD_MMC.rename(chosen, path)) path = chosen;   // fall back to temp name
+  Serial.printf("Pipeline: analyzing %s\n", path.c_str());
 
   // 3. Stage 2 - full identification.
   BirdConfig::apiCallsToday++;
@@ -267,18 +287,25 @@ void birdLoop() {
   if (motion && gatesOpen) {
     Serial.printf("Motion: %d cells changed - pipeline start\n", MotionDetector::lastChangedCells);
     BirdConfig::triggersToday++;
-    // The triggering frame is mid-motion (a bird still landing, wings
-    // blurred). Let the subject settle, then capture a fresh frame for
-    // the analysis - that's the photo worth identifying and keeping.
+    // Instant frame: the bird is already in the triggering frame (that's
+    // why the scene changed), so grab it now - this is what catches a
+    // sub-second visitor. Then release the buffer, let the scene settle,
+    // and grab a second, sharper frame for a lingering bird.
+    const String pInstant = "/birds/_capA.jpg";
+    const String pSettled = "/birds/_capB.jpg";
+    bool haveInstant = sdOk && writeFrame(fb, pInstant);
     esp_camera_fb_return(fb);
-    delay(450);
-    camera_fb_t* shot = esp_camera_fb_get();
-    if (shot) {
-      String path;
-      bool saved = sdOk && savePipelineImage(shot, path);
-      esp_camera_fb_return(shot);
-      if (saved) runPipeline(path);
+    String settled = "";
+    if (sdOk) {
+      delay(400);
+      camera_fb_t* shot = esp_camera_fb_get();
+      if (shot) {
+        if (writeFrame(shot, pSettled)) settled = pSettled;
+        esp_camera_fb_return(shot);
+      }
     }
+    if (haveInstant || settled.length())
+      runPipeline(haveInstant ? pInstant : String(""), settled);
     cooldownUntil = millis() + (unsigned long)BirdConfig::cooldownS * 1000;
     MotionDetector::reset();
     return;
