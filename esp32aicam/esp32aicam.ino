@@ -249,6 +249,10 @@ void birdLoop() {
   }
 
   if (analysisInProgress) return;
+  // Warm-up: the sensor's auto-exposure settles over the first seconds
+  // after boot, which reads as a whole-frame luma change (202/300 cells
+  // on the bench) and would fire a false trigger + API call.
+  if (now - bootMillis < 12000) return;
   if (now - lastMotionCheck < MOTION_INTERVAL_MS) return;
   lastMotionCheck = now;
 
@@ -343,6 +347,10 @@ void handleApiConfigGet() {
   doc["daylight_only"] = BirdConfig::daylightOnly;
   doc["lux_threshold"] = BirdConfig::luxThreshold;
   doc["motion_pct"] = BirdConfig::motionPct;
+  // Never expose the key itself, just whether a real one is stored.
+  doc["openai_key_set"] = CredentialsManager::getOpenAIKey().startsWith("sk-")
+                          && CredentialsManager::getOpenAIKey().indexOf("pending") < 0
+                          && CredentialsManager::getOpenAIKey().indexOf("Your") < 0;
   String out;
   serializeJson(doc, out);
   server.send(200, "application/json", out);
@@ -368,6 +376,22 @@ void handleApiConfigPost() {
   if (doc["daylight_only"].is<bool>()) BirdConfig::daylightOnly = doc["daylight_only"].as<bool>();
   if (doc["lux_threshold"].is<int>()) BirdConfig::luxThreshold = constrain(doc["lux_threshold"].as<int>(), 1, 5000);
   if (doc["motion_pct"].is<int>())    BirdConfig::motionPct = constrain(doc["motion_pct"].as<int>(), 1, 80);
+  // Allow updating the OpenAI key from the config tab (design doc §4)
+  // so a key change never requires a factory reset.
+  if (doc["openai_key"].is<String>()) {
+    String k = doc["openai_key"].as<String>();
+    k.trim();
+    if (k.startsWith("sk-") && k.length() > 20) {
+      CredentialsManager::saveCredentials(
+        CredentialsManager::getWiFiSSID(), CredentialsManager::getWiFiPassword(),
+        k, CredentialsManager::getDeviceName(),
+        CredentialsManager::getUseStaticIP(), CredentialsManager::getStaticIP(),
+        CredentialsManager::getGateway(), CredentialsManager::getSubnet(),
+        CredentialsManager::getDNS());
+      CredentialsManager::loadCredentials();
+      Serial.println("Config: OpenAI key updated");
+    }
+  }
   BirdConfig::save();
   server.send(200, "application/json", "{\"saved\":true}");
 }
