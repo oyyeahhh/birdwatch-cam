@@ -1,0 +1,6 @@
+# Netlify deploy config for the BirdWatch public site.
+# Publishes web/public/, and copies the shared bird illustrations into it at
+# build time so the repo keeps a single copy of the assets (in web/assets/).
+[build]
+  publish = "web/public"
+  command = "mkdir -p web/public/assets && cp -R web/assets/. web/public/assets/"

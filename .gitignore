@@ -85,3 +85,4 @@ npm-debug.log*
 *.mp3
 # Uncomment the line below if you want to exclude JPG captures too
 # *.jpg
+web/public/assets/

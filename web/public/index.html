@@ -1,0 +1,2046 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>birdwatch cam</title>
+<meta name="description" content="The birds outside your window — local camera view.">
+<!-- Apply the saved theme before first paint so dark mode doesn't flash light on load. -->
+<script>try{if(localStorage.getItem('birdwatch:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
+<style>
+  :root {
+    color-scheme: light;
+    --paper:    #fcfcfb;
+    --paper-2:  #f3f2ee;
+    --paper-3:  #e8e6df;
+    --ink:      #1a1612;
+    --ink-2:    #4a3f31;
+    --ink-soft: #908576;
+    --accent:   #4a3f31;
+    --warn:     #c47a1f;
+    --ok:       #4d6730;
+    --err:      #a83a2d;
+    --hairline: rgba(26,22,18,0.14);
+    --pill:     #fcfcfb;
+    --edge:    inset 0 0 0 1px rgba(255,255,255,0.55), 0 0 0 1px rgba(26,22,18,0.04);
+    --edge-lg: inset 0 0 0 1px rgba(255,255,255,0.6), 0 0 0 1px rgba(26,22,18,0.06), 0 8px 28px rgba(26,22,18,0.06);
+    --recess:  inset 0 1px 2px rgba(26,22,18,0.06), inset 0 0 0 1px rgba(26,22,18,0.04);
+    --raised:  inset 0 0 0 1px rgba(255,255,255,0.8), 0 0 0 1px rgba(26,22,18,0.05), 0 1px 2px rgba(26,22,18,0.07);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper:    #17181c;
+    --paper-2:  #212329;
+    --paper-3:  #2c2f36;
+    --ink:      #ece8e1;
+    --ink-2:    #b7afa2;
+    --ink-soft: #837c70;
+    --accent:   #d8d2c6;
+    --warn:     #d9994a;
+    --ok:       #7fa15a;
+    --err:      #c86a5a;
+    --hairline: rgba(236,232,225,0.20);
+    --pill:     #3a3e48;
+    --edge:    inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.4);
+    --edge-lg: inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 0 1px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.5);
+    --recess:  inset 0 1px 2px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.04);
+    --raised:  inset 0 0 0 1px rgba(255,255,255,0.07), 0 0 0 1px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--paper); color: var(--ink); }
+  body {
+    font-family: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; }
+
+  /* ============ Stage / views ============ */
+  .stage { position: fixed; inset: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .static-head { flex: 0 0 auto; padding: 84px 32px 22px; text-align: center; position: relative; z-index: 5; }
+  .static-head .pre {
+    display: inline-block;
+    font: italic 400 clamp(13px, 1.4vw, 18px)/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink-2); letter-spacing: 0.06em; margin-bottom: 6px;
+  }
+  .static-head h1 {
+    margin: 0; padding: 0;
+    font: 700 clamp(24px, 3.2vw, 40px)/1 ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
+    letter-spacing: 0.06em; color: var(--ink); text-transform: uppercase;
+    transition: opacity 240ms cubic-bezier(.7,.05,.2,1);
+  }
+  .static-head.swap-out h1 { opacity: 0; }
+  .views {
+    flex: 1 1 auto; min-height: 0;
+    position: relative; display: flex;
+    transition: transform 480ms cubic-bezier(.7,.05,.2,1);
+  }
+  .view { flex: 0 0 100%; height: 100%; overflow: auto; padding: 8px 48px 120px; position: relative; }
+  /* Collage and stats fit the viewport (no scroll); atlas + the rest scroll. */
+  .view#v0, .view#v1 { overflow: hidden; padding: 8px 32px 88px; }
+  .view#v0 { display: flex; }
+  .view#v1 { display: flex; flex-direction: column; }
+  @media (max-width: 700px) {
+    .static-head { padding: 92px 18px 18px; }
+    .view { padding: 8px 16px 120px; }
+    .view#v0, .view#v1 { padding: 8px 16px 88px; }
+  }
+
+  /* ============ Top bar ============ */
+  .top {
+    position: fixed; top: 22px; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 28px; z-index: 30; pointer-events: none;
+  }
+  .top > * { pointer-events: auto; }
+  .window-pick {
+    display: inline-flex; gap: 0; padding: 4px;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess); position: relative;
+  }
+  .window-pick button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.18em;
+    padding: 9px 16px; border-radius: 999px; cursor: pointer; text-transform: uppercase;
+    transition: color 200ms ease; position: relative; z-index: 1;
+  }
+  .window-pick button:hover, .window-pick button[aria-current="true"] { color: var(--ink); }
+  .device-pill {
+    background: var(--paper); border: 0; color: var(--ink);
+    font: 11px/1 ui-monospace, Menlo, monospace; padding: 9px 14px 8px;
+    border-radius: 999px; cursor: pointer; letter-spacing: 0.14em; text-transform: lowercase;
+    box-shadow: var(--raised);
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform 160ms ease;
+  }
+  .device-pill:hover { transform: translateY(-1px); }
+  .device-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  @media (max-width: 700px) {
+    .top { top: 12px; padding: 0 12px; }
+    .window-pick { padding: 3px; }
+    .window-pick button { font-size: 8.5px; padding: 6px 10px; letter-spacing: 0.12em; }
+    .device-pill { font-size: 9px; padding: 6px 11px 5px; }
+  }
+
+  /* ============ Bottom slider ============ */
+  .slider {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 0; padding: 4px; z-index: 30;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess);
+  }
+  .slider button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.2em;
+    padding: 11px 18px; border-radius: 999px; cursor: pointer; text-transform: uppercase;
+    transition: color 200ms ease; position: relative; z-index: 1;
+  }
+  .slider button:hover, .slider button[aria-current="true"] { color: var(--ink); }
+  @media (max-width: 700px) {
+    .slider { bottom: 16px; padding: 3px; max-width: calc(100vw - 16px); }
+    .slider button { font-size: 8px; padding: 9px 8px; letter-spacing: 0.08em; }
+  }
+  .seg-pill {
+    position: absolute; top: 4px; bottom: 4px; left: 0;
+    background: var(--pill); border-radius: 999px;
+    box-shadow: var(--raised);
+    transition: transform 320ms cubic-bezier(.7,.05,.2,1), width 320ms cubic-bezier(.7,.05,.2,1);
+    will-change: transform, width;
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ============ Entrances ============
+     Collage tiles bloom centre-out; atlas cards rise row-by-row; the
+     stats graph populates left-to-right. backwards fill holds the hidden
+     start state through each element's stagger delay. */
+  @keyframes gtile-in { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+  .gtile.entering { animation: gtile-in 420ms cubic-bezier(.2,.7,.3,1) backwards; }
+  @keyframes bird-card-in { from { opacity: 0; transform: translateY(16px) scale(0.96); } to { opacity: 1; transform: none; } }
+  .bird-card.entering { animation: bird-card-in 480ms cubic-bezier(.2,.7,.3,1) backwards; }
+  @keyframes stats-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .stats-tl-col.entering, .stats-tl-gridline.entering,
+  .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
+  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering {
+    animation: stats-fade-in 340ms ease backwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gtile.entering, .bird-card.entering, .stats-tl-col.entering,
+    .stats-tl-gridline.entering, .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
+    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering { animation: none; }
+  }
+
+  /* ============ View 1 — Collage ============ */
+  .gcollage {
+    flex: 1 1 auto; width: 100%; max-width: 1300px; margin: 0 auto;
+    position: relative; min-height: 0;
+  }
+  .gtile {
+    position: absolute;
+    background: transparent; border: 0; padding: 0; margin: 0;
+    overflow: visible;
+    transition: transform 130ms ease;
+    cursor: pointer;
+  }
+  .gtile.is-hover { transform: scale(1.04); z-index: 3; }
+  .gtile img, .gtile svg {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+    filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
+    transition: filter 130ms ease;
+  }
+  .gtile.is-hover img, .gtile.is-hover svg {
+    filter: drop-shadow(0 3px 10px rgba(26,22,18,0.26)) saturate(1.1);
+  }
+  .collage-tip {
+    position: absolute; left: 50%; bottom: 14px;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: var(--paper);
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(26,22,18,0.12), inset 0 0 0 1px rgba(255,255,255,0.6);
+    font: italic 13px/1.3 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    opacity: 0; pointer-events: none;
+    transition: opacity 150ms ease;
+    white-space: nowrap;
+    z-index: 4;
+  }
+  .collage-tip[aria-hidden="false"] { opacity: 1; }
+  .collage-tip .ct-name { font-style: normal; font-weight: 600; }
+  .collage-tip .ct-n { font-style: normal; font-weight: 700; }
+  .collage-tip .ct-w { color: var(--ink-soft); }
+  .empty {
+    color: var(--ink-soft); font: 10px ui-monospace, Menlo, monospace;
+    padding: 120px 0; text-align: center; letter-spacing: 0.18em;
+    text-transform: uppercase; width: 100%;
+  }
+
+  /* ============ View 2 — Stats ============ */
+  .stats-grid {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 80px;
+    max-width: 1100px; margin: 0 auto; width: 100%;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: 1fr; gap: 40px; }
+    .stats-timeline { height: clamp(260px, 44vh, 420px); }
+  }
+  @media (max-width: 700px) {
+    .stats-timeline { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+    .stats-tl-label { font-size: 11px; }
+    .stats-tl-label .sci { font-size: 9px; }
+    .stats-tl-xtick { font-size: 8px; }
+  }
+  @media (min-width: 901px) {
+    .stats-grid { flex: 0 1 auto; margin: auto; }
+  }
+  .stats-timeline {
+    position: relative;
+    flex: 1 1 auto; min-height: 0;
+    padding: 0 0 28px 32px;
+  }
+  .stats-tl-yaxis {
+    position: absolute; left: 0; top: 0; bottom: 28px; width: 28px;
+    border-right: 1px solid var(--hairline);
+  }
+  .stats-tl-ytick {
+    position: absolute; right: 5px;
+    font: 8px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    transform: translateY(50%);
+  }
+  .stats-tl-ytick::after {
+    content: ''; position: absolute; right: -5px; top: 50%;
+    width: 4px; height: 1px; background: var(--hairline);
+  }
+  .stats-tl-plot { position: relative; height: 100%; }
+  .stats-tl-col { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); cursor: pointer; }
+  .stats-tl-gridline {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: var(--hairline); pointer-events: none;
+  }
+  .stats-tl-square {
+    position: absolute; left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    border-left: 1px solid var(--paper);
+    border-right: 1px solid var(--paper);
+    transition: background 140ms ease, transform 140ms ease;
+  }
+  .stats-tl-col.sync-hi .stats-tl-square {
+    background: var(--accent);
+    transform: translateX(-50%) scale(1.18);
+  }
+  .stats-tl-col.sync-hi .stats-tl-label { transform: rotate(-90deg) translateY(55%) scale(1.1); }
+  .stats-tl-col.sync-hi .stats-tl-label .com,
+  .stats-tl-col.sync-hi .stats-tl-label .sci { color: var(--accent); }
+  .stats-tl-label {
+    position: absolute; left: 50%;
+    transform-origin: 0% 100%;
+    transform: rotate(-90deg) translateY(50%);
+    white-space: nowrap;
+    font: 10px/1.15 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    transition: transform 130ms ease;
+  }
+  .stats-tl-label .com { display: block; font-weight: 600; transition: color 130ms ease; }
+  .stats-tl-label .sci {
+    display: block; font-style: italic; color: var(--ink-soft); font-size: 8.5px;
+    transition: color 130ms ease;
+  }
+  .stats-tl-xtick {
+    position: absolute; bottom: -19px;
+    transform: translateX(-50%);
+    font: 7px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .stats-tl-empty {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    text-transform: lowercase; letter-spacing: 0.18em;
+  }
+  .stats-tl-cap {
+    position: absolute; top: 0; right: 0; z-index: 2;
+    background: var(--paper); padding: 1px 0 3px 8px;
+    font: 8.5px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .stats-side {
+    display: flex; flex-direction: column; justify-content: center;
+    align-self: stretch; max-height: 100%;
+    padding: 6px 0;
+  }
+  .stats-side h3 {
+    font: 700 10px ui-monospace, Menlo, monospace; color: var(--ink);
+    letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 1px;
+    border-left: 2px solid var(--accent); padding-left: 10px;
+  }
+  .stats-side .grp { flex: 0 0 auto; }
+  .stats-side .grp + .grp { margin-top: 22px; }
+  .stats-side .grp small {
+    display: block; font: 9px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em; margin: 0 0 3px 12px;
+  }
+  .stats-side ol { list-style: none; padding: 0; margin: 0; }
+  .stats-side li {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 10px;
+    padding: 2px 0;
+    box-shadow: inset 0 -1px 0 rgba(26,22,18,0.05);
+    font: 12.5px/1.25 ui-serif, Georgia, serif; color: var(--ink);
+    align-items: baseline;
+    transition: background 140ms ease, color 140ms ease;
+  }
+  .stats-side li[data-sci] { cursor: pointer; }
+  .stats-side li[data-sci]:hover, .stats-side li.sync-hi { background: var(--paper-2); }
+  .stats-side li.sync-hi span:not(.yr):not(.ct) { color: var(--accent); }
+  .stats-side li .yr { font: 9.5px ui-monospace, Menlo, monospace; color: var(--accent); letter-spacing: 0.04em; }
+  .stats-side li .ct { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  /* ============ View 3 — Atlas ============ */
+  .atlas-controls {
+    position: sticky; top: 0; z-index: 2;
+    max-width: 1280px; margin: 0 auto 18px;
+    display: flex; justify-content: flex-end; align-items: center;
+    pointer-events: none;
+  }
+  .atlas-sort {
+    pointer-events: auto;
+    display: inline-flex; padding: 3px; position: relative;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess);
+  }
+  .atlas-sort button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    width: 30px; height: 26px; padding: 0; border-radius: 999px;
+    cursor: pointer; position: relative; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color 200ms ease;
+  }
+  .atlas-sort button svg { width: 13px; height: 13px; display: block; }
+  .atlas-sort button:hover, .atlas-sort button[aria-current="true"] { color: var(--ink); }
+  .atlas-sort button .tip {
+    position: absolute; top: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: lowercase; color: var(--ink-soft);
+    background: var(--paper); padding: 3px 8px; border-radius: 4px;
+    box-shadow: var(--raised);
+    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  }
+  .atlas-sort button:hover .tip { opacity: 1; }
+  .atlas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 22px;
+    max-width: 1280px; margin: 0 auto;
+  }
+  @media (max-width: 700px) {
+    .atlas-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .atlas-grid .bird-card { min-height: 0; padding: 12px 12px 14px; border-radius: 9px; }
+    .atlas-grid .bird-card .stat { top: 10px; left: 11px; font-size: 8px; }
+    .atlas-grid .bird-card .stat .n { font-size: 11px; }
+    .atlas-grid .bird-card .img-wrap { margin: 30px 0 8px; }
+    .atlas-grid .bird-card .img-wrap img, .atlas-grid .bird-card .img-wrap svg { max-height: 96px; }
+    .atlas-grid .bird-card h3 { font-size: 12.5px; }
+    .atlas-grid .bird-card .sci { font-size: 9.5px; }
+    .atlas-grid .bird-card .actions { display: none; }
+    .atlas-grid .lifer-badge { top: 9px; right: 9px; font-size: 7px; padding: 3px 5px; letter-spacing: 0.1em; }
+  }
+  .bird-card {
+    position: relative;
+    background: var(--paper);
+    border-radius: 10px;
+    padding: 16px 16px 12px;
+    box-shadow: var(--edge-lg);
+    display: flex; flex-direction: column;
+    min-height: 320px;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+  .bird-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(26,22,18,0.12); }
+  .bird-card .stat {
+    position: absolute; top: 14px; left: 16px;
+    font: 9px/1.5 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: 0.04em;
+  }
+  .bird-card .stat .n {
+    color: var(--ink); font: 700 13px/1 ui-serif, Georgia, serif;
+    font-variant-numeric: tabular-nums; margin-right: 4px;
+    letter-spacing: 0;
+  }
+  .lifer-badge {
+    position: absolute; top: 12px; right: 12px; z-index: 2;
+    font: 700 8px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--paper); background: var(--accent);
+    padding: 4px 7px; border-radius: 999px;
+    box-shadow: 0 2px 6px rgba(26,22,18,0.18);
+    pointer-events: none;
+  }
+  .bird-card .img-wrap {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    margin: 38px 0 10px; padding: 4px;
+  }
+  .bird-card .img-wrap img, .bird-card .img-wrap svg {
+    max-width: 100%; max-height: 160px; display: block;
+    filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
+  }
+  .bird-card h3 {
+    margin: 0;
+    font: 700 14.5px/1.15 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink); letter-spacing: 0.01em;
+  }
+  .bird-card .sci { font: italic 11px/1.2 ui-serif, Georgia, serif; color: var(--ink-2); margin: 2px 0 0; }
+  .bird-card .actions {
+    display: flex; gap: 6px; align-items: stretch;
+    margin-top: 12px; padding-top: 10px;
+    box-shadow: inset 0 1px 0 rgba(26,22,18,0.07);
+  }
+  .chip {
+    flex: 0 0 auto;
+    background: var(--paper-2);
+    border: 0; color: var(--ink);
+    padding: 5px 9px;
+    border-radius: 4px;
+    font: 9.5px/1 ui-monospace, Menlo, monospace;
+    text-transform: lowercase; letter-spacing: 0.10em;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px;
+    box-shadow: var(--raised);
+    transition: transform 160ms ease, color 160ms ease;
+    white-space: nowrap;
+  }
+  a.chip { cursor: pointer; }
+  a.chip:hover { color: var(--ink); transform: translateY(-1px); }
+  .chip.ext::after { content: '↗'; opacity: 0.6; font-size: 11px; }
+  .chip.warn { color: var(--warn); }
+  .chip.soft { color: var(--ink-soft); }
+  .atlas-empty {
+    grid-column: 1 / -1;
+    padding: 80px 16px; text-align: center;
+    font: 12px/1.6 ui-serif, Georgia, serif; color: var(--ink-2);
+  }
+  .atlas-empty p { margin: 0 0 4px; }
+  .atlas-empty p.hint {
+    font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em;
+  }
+
+  /* ============ Detail modal (bird expansion) ============
+     Click a collage bird or atlas card — fades in over a soft ink
+     backdrop with the sketch, pose toggle, and stats. */
+  #detail-modal {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    pointer-events: none; opacity: 0;
+    transition: opacity 260ms ease;
+  }
+  #detail-modal.is-open { pointer-events: auto; opacity: 1; }
+  .modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(26,22,18,0.32);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  }
+  .modal-card {
+    position: relative;
+    max-width: 760px; max-height: calc(100vh - 48px);
+    width: 100%;
+    background: var(--paper);
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6), 0 30px 80px rgba(26,22,18,0.22);
+    padding: 30px 34px 26px;
+    overflow: auto;
+  }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    background: var(--paper-2); border: 0;
+    width: 30px; height: 30px; border-radius: 999px;
+    font: 16px/1 ui-monospace, Menlo, monospace; color: var(--ink);
+    box-shadow: var(--raised);
+    cursor: pointer; z-index: 1;
+  }
+  .modal-close:hover { color: var(--accent); }
+  .modal-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 32px; align-items: start; }
+  @media (max-width: 700px) {
+    #detail-modal { padding: 12px; }
+    .modal-grid { grid-template-columns: 1fr; gap: 22px; }
+    .modal-card { padding: 22px; }
+  }
+  .modal-img {
+    position: relative;
+    background: var(--paper-2); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px;
+    aspect-ratio: 4 / 3;
+    box-shadow: var(--recess);
+  }
+  .modal-img img, .modal-img svg {
+    max-width: 100%; max-height: 100%;
+    filter: drop-shadow(0 2px 6px rgba(26,22,18,0.10));
+    transition: opacity 220ms ease;
+  }
+  .modal-img img.swapping { opacity: 0; }
+  .pose-toggle {
+    position: absolute; left: 10px; bottom: 10px;
+    display: inline-flex; padding: 3px;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess);
+    z-index: 2;
+  }
+  .pose-toggle[data-unavailable="true"] { display: none; }
+  .pose-toggle button[data-hidden="true"] { display: none; }
+  /* Public site: no live stream (can't reach the LAN) and no config editing. */
+  #slider [data-i="3"], #slider [data-i="5"] { display: none; }
+  .pose-toggle button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    width: 30px; height: 26px; padding: 0; border-radius: 999px;
+    cursor: pointer; position: relative; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color 200ms ease;
+  }
+  .pose-toggle button svg { width: 13px; height: 13px; display: block; }
+  .pose-toggle button:hover, .pose-toggle button[aria-current="true"] { color: var(--ink); }
+  .pose-toggle button .tip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: lowercase; color: var(--ink-soft);
+    background: var(--paper); padding: 3px 8px; border-radius: 4px;
+    box-shadow: var(--raised);
+    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  }
+  .pose-toggle button:hover .tip { opacity: 1; }
+  .modal-info h2 {
+    margin: 4px 36px 0 0;
+    font: 700 26px/1.1 ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
+    color: var(--ink); letter-spacing: 0.01em;
+  }
+  .modal-info .sci {
+    font: italic 13.5px/1.3 ui-serif, Georgia, serif;
+    color: var(--ink-2); margin: 5px 0 18px;
+  }
+  .modal-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+  .modal-stats > div {
+    background: var(--paper-2); border-radius: 6px; padding: 10px 12px;
+    box-shadow: var(--recess);
+  }
+  .modal-stats .n {
+    display: block;
+    font: 800 17px/1 ui-serif, Georgia, serif;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .modal-stats .lbl {
+    display: block; margin-top: 4px;
+    font: 8.5px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .modal-info .desc { font: 13px/1.55 ui-serif, Georgia, serif; color: var(--ink); margin: 0 0 16px; }
+  .modal-actions { display: flex; gap: 6px; }
+
+  /* ============ View 4 — Live ============
+     The MJPEG preview sits in the same recessed paper well as the
+     modal sketch. The stream only runs while this view is active —
+     streaming pauses detection on the camera. */
+  .live-frame {
+    max-width: 820px; margin: 0 auto;
+    background: var(--paper-2); border-radius: 10px;
+    box-shadow: var(--recess);
+    padding: 14px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 300px;
+    position: relative;
+  }
+  .live-frame img {
+    max-width: 100%; border-radius: 6px; display: block;
+    box-shadow: 0 2px 10px rgba(26,22,18,0.18);
+  }
+  .live-frame .live-empty {
+    font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.18em; text-transform: uppercase;
+    text-align: center; padding: 60px 20px;
+  }
+  .live-cap {
+    max-width: 820px; margin: 10px auto 0;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  }
+  .live-cap .k {
+    font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em;
+  }
+  .live-cap button {
+    background: var(--paper-2); border: 0; color: var(--ink);
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.10em; text-transform: lowercase;
+    box-shadow: var(--raised);
+  }
+
+  /* ============ View 5 — Camera health ============ */
+  .diag-frame { max-width: 1000px; margin: 0 auto; }
+  .demo-note {
+    font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.06em; text-transform: lowercase;
+    margin: 0 0 14px; text-align: center;
+  }
+  .admin-grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin-bottom: 8px;
+  }
+  .admin-card { background: var(--paper); border-radius: 8px; padding: 14px 16px; box-shadow: var(--edge); }
+  .admin-card h3 {
+    margin: 0 0 6px; font: 10px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 500;
+  }
+  .admin-card .v { font: 20px ui-serif, Georgia, serif; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .admin-card .sub { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft); margin-top: 4px; }
+  .admin-card.warn { box-shadow: 0 0 0 1px var(--warn), var(--edge); }
+  .admin-card.warn h3 { color: var(--warn); }
+  .section-head {
+    font: 700 11px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink); margin: 24px 0 10px;
+    border-left: 2px solid var(--accent); padding-left: 10px;
+  }
+  .funnel {
+    display: flex; align-items: stretch; gap: 0;
+    background: var(--paper); border-radius: 8px; box-shadow: var(--edge);
+    overflow: hidden;
+  }
+  .funnel .step { flex: 1; padding: 14px 16px; position: relative; }
+  .funnel .step + .step { box-shadow: inset 1px 0 0 var(--hairline); }
+  .funnel .step .n { font: 700 22px/1.1 ui-serif, Georgia, serif; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .funnel .step .k {
+    display: block; font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  table.admin-tbl {
+    width: 100%; border-collapse: collapse;
+    font: 12px ui-monospace, Menlo, monospace;
+    background: var(--paper); border-radius: 8px; overflow: hidden;
+    box-shadow: var(--edge);
+  }
+  table.admin-tbl th, table.admin-tbl td { border-bottom: 1px solid var(--hairline); padding: 9px 12px; text-align: left; }
+  table.admin-tbl tr:last-child td { border-bottom: 0; }
+  table.admin-tbl th { color: var(--ink-soft); text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.14em; font-weight: 500; }
+  table.admin-tbl td.serif { font: 13px ui-serif, Georgia, serif; }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .pill.held { background: rgba(196,122,31,.16); color: var(--warn); }
+  .logs-pane {
+    background: #1c1a14; color: #d7cba8;
+    font: 11.5px/1.6 ui-monospace, Menlo, monospace;
+    padding: 14px 16px; border-radius: 8px;
+    overflow: auto; white-space: pre-wrap;
+  }
+
+  /* ============ View 5 — Configuration ============ */
+  .conf-frame { max-width: 560px; margin: 0 auto; }
+  .menu-section { margin-top: 20px; padding-top: 14px; border-top: 1px solid rgba(26,22,18,0.07); }
+  .menu-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  .menu-section h3 {
+    font: 700 9px ui-monospace, Menlo, monospace; letter-spacing: 0.20em;
+    color: var(--ink); text-transform: uppercase; margin: 0 0 10px 4px;
+  }
+  .menu-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 12px;
+    align-items: center; padding: 8px 6px 8px 10px; border-radius: 6px;
+  }
+  .menu-row + .menu-row, .menu-row + .slider-row, .slider-row + .menu-row { box-shadow: inset 0 1px 0 rgba(26,22,18,0.06); }
+  .menu-row .label { font: 13px ui-serif, Georgia, serif; color: var(--ink); }
+  .hint {
+    display: block; font: 9px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: 0.04em; margin-top: 2px;
+    text-transform: none;
+  }
+  .field {
+    display: flex; align-items: stretch;
+    background: var(--paper-2); border-radius: 8px;
+    box-shadow: var(--recess); padding: 4px;
+    min-width: 200px;
+  }
+  .field input {
+    flex: 1; width: 100%; background: transparent; border: 0; outline: 0;
+    color: var(--ink); padding: 7px 10px;
+    font: 13px ui-monospace, Menlo, monospace;
+  }
+  .field input::placeholder { color: var(--ink-soft); }
+  .field.serif input { font: 13.5px ui-serif, Georgia, serif; }
+  .seg {
+    display: inline-flex; padding: 4px;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess); position: relative;
+  }
+  .seg button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    position: relative; z-index: 1; transition: color 200ms ease;
+  }
+  .seg button:hover, .seg button[aria-current="true"] { color: var(--ink); }
+  .mode-hint {
+    margin: 10px 4px 0; padding: 10px 12px;
+    background: var(--paper-2); border-radius: 8px; box-shadow: var(--recess);
+    font: 12.5px/1.5 ui-serif, Georgia, serif; color: var(--ink-2);
+  }
+  .switch {
+    position: relative; width: 38px; height: 20px;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess); cursor: pointer; border: 0; padding: 0;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: var(--pill); border-radius: 999px;
+    box-shadow: var(--raised);
+    transition: transform 220ms cubic-bezier(.7,.05,.2,1);
+  }
+  .switch[aria-checked="true"] { background: var(--ink-2); }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); }
+  .slider-row { display: block; padding: 8px 6px 10px 10px; }
+  .slider-row .head { display: flex; align-items: baseline; gap: 24px; margin-bottom: 6px; }
+  .slider-row .head .label-block { flex: 1; min-width: 0; }
+  .slider-row .label { font: 13px ui-serif, Georgia, serif; color: var(--ink); }
+  .slider-row .value {
+    flex: 0 0 auto; font: 11px ui-monospace, Menlo, monospace;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+    background: var(--paper-2); padding: 3px 10px; border-radius: 4px;
+    box-shadow: var(--recess); min-width: 48px; text-align: center;
+  }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: var(--paper-2); border-radius: 999px; box-shadow: var(--recess); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; margin-top: -6px;
+    background: var(--paper); border-radius: 999px;
+    box-shadow: var(--raised); cursor: pointer;
+  }
+  input[type="range"]::-moz-range-track { height: 4px; background: var(--paper-2); border-radius: 999px; box-shadow: var(--recess); }
+  input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: var(--paper); border-radius: 999px; box-shadow: var(--raised); border: 0; cursor: pointer; }
+  .menu-links { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 4px 0 2px; }
+  .menu-links button {
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px; background: var(--paper-2); border: 0;
+    color: var(--ink); cursor: pointer;
+    font: 10.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.10em; text-transform: lowercase;
+    border-radius: 6px; box-shadow: var(--raised);
+    transition: transform 160ms ease;
+  }
+  .menu-links button:hover { transform: translateY(-1px); background: var(--paper); }
+  .menu-save-row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 16px; padding: 0 4px; }
+  .menu-save-row .save-state { flex: 1; font: 9px ui-monospace, Menlo, monospace; color: var(--ink-soft); letter-spacing: 0.04em; }
+  .menu-save-row .save-state.ok { color: var(--ok); }
+  .menu-save-row button {
+    background: var(--ink); color: var(--paper); border: 0;
+    padding: 8px 16px; border-radius: 6px;
+    font: 10px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: uppercase; cursor: pointer; box-shadow: var(--raised);
+  }
+  .reach-note {
+    margin: 22px 4px 0; font: 10px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: 0.04em; text-align: center;
+  }
+  .reach-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="window-pick" id="winPick" role="tablist" aria-label="time window">
+    <i class="seg-pill" aria-hidden="true"></i>
+    <button data-h="1"   type="button">1H</button>
+    <button data-h="12"  type="button">12H</button>
+    <button data-h="24"  type="button" aria-current="true">24H</button>
+    <button data-h="168" type="button">7D</button>
+    <button data-h="1000000" type="button">ALL</button>
+  </div>
+  <button class="device-pill" id="devicePill" type="button" title="camera health">
+    <span class="dot"></span><span id="devPillLabel">yst-nj-lab</span>
+  </button>
+</header>
+
+<main class="stage">
+  <header class="static-head">
+    <span class="pre">birdwatch cam</span>
+    <h1 id="staticTitle">Seen Recently</h1>
+  </header>
+  <div class="views" id="views">
+
+    <!-- ========== View 1 — Collage ========== -->
+    <section class="view" id="v0" aria-label="Bird collage">
+      <div class="gcollage" id="collage"></div>
+    </section>
+
+    <!-- ========== View 2 — Stats ========== -->
+    <section class="view" id="v1" aria-label="Stats">
+      <div class="stats-grid">
+        <div class="stats-timeline" id="statsTimeline"></div>
+        <aside class="stats-side">
+          <div class="grp">
+            <h3>By Period</h3>
+            <small>detections, grouped by recency</small>
+            <ol id="statsByPeriod"></ol>
+          </div>
+          <div class="grp">
+            <h3>Top Species</h3>
+            <small id="statsTopSpecCap">most-seen, current window</small>
+            <ol id="statsTopSpec"></ol>
+          </div>
+          <div class="grp">
+            <h3>First Detections</h3>
+            <small>newest additions to the life list</small>
+            <ol id="statsFirstSeen"></ol>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ========== View 3 — Atlas ========== -->
+    <section class="view" id="v2" aria-label="Atlas">
+      <div class="atlas-controls">
+        <div class="atlas-sort" id="atlasSort" role="tablist" aria-label="sort atlas">
+          <i class="seg-pill" aria-hidden="true"></i>
+          <button data-sort="count" type="button" aria-current="true" aria-label="most seen">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 12 V8"/><path d="M6 12 V5"/><path d="M10 12 V3"/>
+            </svg>
+            <span class="tip">most seen</span>
+          </button>
+          <button data-sort="recent" type="button" aria-label="most recent">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="7" cy="7" r="5.2"/><path d="M7 4 V7 L9.2 8.3"/>
+            </svg>
+            <span class="tip">most recent</span>
+          </button>
+          <button data-sort="alpha" type="button" aria-label="alphabetical">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.4 11.5 L4 4.5 L5.6 11.5"/><path d="M2.9 9.2 H5.1"/>
+              <path d="M8.2 11.5 V4.5 H10.4 a1.3 1.3 0 0 1 0 2.6 H8.2"/><path d="M8.2 7.1 H10.6 a1.5 1.5 0 0 1 0 3 H8.2"/>
+            </svg>
+            <span class="tip">a → z</span>
+          </button>
+        </div>
+      </div>
+      <div class="atlas-grid" id="atlasGrid"></div>
+    </section>
+
+    <!-- ========== View 4 — Live ========== -->
+    <section class="view" id="v3live" aria-label="Live view">
+      <div class="live-frame" id="liveFrame">
+        <div class="live-empty" id="liveEmpty">connecting to the camera&hellip;</div>
+        <img id="liveImg" alt="live camera view" style="display:none">
+      </div>
+      <div class="live-cap">
+        <span class="k">what the camera sees right now &middot; detection pauses while you watch</span>
+        <button type="button" id="liveRestart">restart preview</button>
+      </div>
+    </section>
+
+    <!-- ========== View 5 — Camera health ========== -->
+    <section class="view" id="v3" aria-label="Camera health">
+      <div class="diag-frame">
+        <p class="demo-note" id="demoNote">showing sample data — waiting for the camera to publish its first birds</p>
+        <div class="admin-grid">
+          <div class="admin-card"><h3>Status</h3><div class="v" id="stStatus">Online</div><div class="sub" id="stStatusSub">heartbeat 40 s ago</div></div>
+          <div class="admin-card"><h3>Wi-Fi signal</h3><div class="v" id="stRssi">-58 dBm</div><div class="sub" id="stRssiSub">good</div></div>
+          <div class="admin-card"><h3>Uptime</h3><div class="v" id="stUp">6 d 4 h</div><div class="sub" id="stUpSub">fw 0.1.0 · v3.2.5 base</div></div>
+          <div class="admin-card"><h3>Free memory</h3><div class="v" id="stMem">118 KB</div><div class="sub" id="stMemSub">psram 5.2 MB free</div></div>
+          <div class="admin-card"><h3>Light level</h3><div class="v" id="stLux">5,400 lux</div><div class="sub" id="stLuxSub">daylight — detecting</div></div>
+          <div class="admin-card warn" id="stApiCard"><h3>API calls today</h3><div class="v" id="stApi">38 / 60</div><div class="sub" id="stApiSub">63% of daily cap</div></div>
+        </div>
+
+        <p class="section-head">Today's funnel</p>
+        <div class="funnel">
+          <div class="step"><span class="n" id="fTrig">142</span><span class="k">motion triggers</span></div>
+          <div class="step"><span class="n" id="fGate">41</span><span class="k">bird gate passed</span></div>
+          <div class="step"><span class="n" id="fId">38</span><span class="k">species identified</span></div>
+          <div class="step"><span class="n" id="fPub">31</span><span class="k">in gallery</span></div>
+        </div>
+
+        <p class="section-head">Review queue — below 50%, held from gallery</p>
+        <table class="admin-tbl" id="revTable">
+          <tr><th>time</th><th>best guess</th><th>confidence</th><th>status</th></tr>
+          <tr><td>11:20</td><td class="serif">Sparrow (species uncertain)</td><td>42%</td><td><span class="pill held">held</span></td></tr>
+          <tr><td>07:02</td><td class="serif">Unidentified bird</td><td>31%</td><td><span class="pill held">held</span></td></tr>
+        </table>
+
+        <p class="section-head">Recent errors</p>
+        <div class="logs-pane" id="errPane">09:14:31  wifi reconnect (rssi -71, 2.1 s)
+06:48:07  openai timeout, retry ok (stage 1)</div>
+      </div>
+    </section>
+
+    <!-- ========== View 5 — Configuration ========== -->
+    <section class="view" id="v4" aria-label="Configuration">
+      <div class="conf-frame">
+
+        <div class="menu-section">
+          <h3>Identity</h3>
+          <div class="menu-row"><div><span class="label">Device ID</span><span class="hint">org-site-window · used on the public site</span></div><div class="field"><input id="cfgDevId" value="yst-nj-lab"></div></div>
+          <div class="menu-row"><div><span class="label">Friendly name</span></div><div class="field serif"><input id="cfgName" value="Science lab window"></div></div>
+          <div class="menu-row"><div><span class="label">Region hint</span><span class="hint">fed to the id prompt for better guesses</span></div><div class="field serif"><input id="cfgRegion" value="Feeder, northern New Jersey"></div></div>
+        </div>
+
+        <div class="menu-section">
+          <h3>Sharing</h3>
+          <div class="menu-row">
+            <div><span class="label">Sharing mode</span><span class="hint">changeable any time · takes effect immediately</span></div>
+            <div class="seg" id="modeSeg">
+              <i class="seg-pill" aria-hidden="true"></i>
+              <button type="button" data-mode="local">local</button>
+              <button type="button" data-mode="diag">diagnostics</button>
+              <button type="button" data-mode="cloud" aria-current="true">full cloud</button>
+            </div>
+          </div>
+          <p class="mode-hint" id="modeHint"></p>
+        </div>
+
+        <div class="menu-section">
+          <h3>Detection</h3>
+          <div class="slider-row">
+            <div class="head"><div class="label-block"><span class="label">Publish threshold</span><span class="hint">below this, photos carry a confidence note</span></div><span class="value" id="pubVal">80%</span></div>
+            <input type="range" min="50" max="100" step="1" value="80" id="pubRange">
+          </div>
+          <div class="slider-row">
+            <div class="head"><div class="label-block"><span class="label">Review threshold</span><span class="hint">below this, detections wait in the review queue</span></div><span class="value" id="revVal">50%</span></div>
+            <input type="range" min="20" max="79" step="1" value="50" id="revRange">
+          </div>
+          <div class="slider-row">
+            <div class="head"><div class="label-block"><span class="label">Cooldown between captures</span></div><span class="value" id="coolVal">45 s</span></div>
+            <input type="range" min="10" max="300" step="5" value="45" id="coolRange">
+          </div>
+          <div class="slider-row">
+            <div class="head"><div class="label-block"><span class="label">Daily API call cap</span></div><span class="value" id="capVal">60</span></div>
+            <input type="range" min="10" max="200" step="5" value="60" id="capRange">
+          </div>
+          <div class="menu-row"><div><span class="label">Daylight only</span><span class="hint">pause when the light sensor reads night</span></div><button class="switch" id="dayToggle" role="switch" aria-checked="true" aria-label="daylight only"></button></div>
+        </div>
+
+        <div class="menu-section">
+          <h3>Appearance</h3>
+          <div class="menu-row">
+            <div><span class="label">Theme</span></div>
+            <div class="seg" id="themeSeg">
+              <i class="seg-pill" aria-hidden="true"></i>
+              <button type="button" data-theme="light">light</button>
+              <button type="button" data-theme="dark">dark</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-section">
+          <h3>Actions</h3>
+          <div class="menu-links">
+            <button type="button" id="actCapture">test capture</button>
+            <button type="button" id="actSupabase">test supabase</button>
+            <button type="button" id="actRestart">restart camera</button>
+          </div>
+          <div class="menu-save-row">
+            <span class="save-state" id="saveState">unsaved changes are kept until reboot</span>
+            <button type="button" id="saveBtn">Save</button>
+          </div>
+        </div>
+
+        <p class="reach-note" id="reachNote">this camera · <a href="http://birdcam-yst.local">birdcam-yst.local</a> · 192.168.0.181 · ask your it staff for a dhcp reservation</p>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<div id="detail-modal" aria-hidden="true" role="dialog" aria-labelledby="modalCommon">
+  <div class="modal-backdrop" data-close="1"></div>
+  <article class="modal-card">
+    <button class="modal-close" type="button" aria-label="Close" data-close="1">×</button>
+    <div class="modal-grid">
+      <div class="modal-img">
+        <div id="modalArt"></div>
+        <div class="pose-toggle" id="modalPoseToggle" role="tablist" aria-label="Pose">
+          <i class="seg-pill" aria-hidden="true"></i>
+          <button type="button" data-pose="1" aria-current="true" aria-label="perched">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.5 6.5 C 4 4, 6 3, 8 4 C 10 3.6, 11.6 4.6, 12 6.5 L 11.5 8 C 11 9.6, 9.4 10.4, 8 10.4 C 6.4 10.4, 4.8 9.6, 4.2 8 Z"/>
+              <circle cx="10.6" cy="5.7" r=".4" fill="currentColor"/>
+              <path d="M12 6.2 L 13.6 5.8"/>
+              <path d="M7.5 10.4 L 7.2 12.2"/>
+              <path d="M8.6 10.4 L 8.9 12.2"/>
+              <path d="M2 12.6 H 13"/>
+            </svg>
+            <span class="tip">perched</span>
+          </button>
+          <button type="button" data-pose="2" aria-label="in flight">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1.5 8 Q 4.5 4, 7.5 7.5 Q 11 4, 14.5 8"/>
+              <path d="M7.5 7.5 L 8 9.5"/>
+              <circle cx="8.5" cy="7.2" r=".4" fill="currentColor"/>
+              <path d="M8.6 7 L 10 6.6"/>
+            </svg>
+            <span class="tip">in flight</span>
+          </button>
+          <button type="button" data-pose="photo" aria-label="real photo" data-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1.5" y="4.5" width="13" height="9" rx="1.6"/>
+              <circle cx="8" cy="9" r="2.4"/>
+              <path d="M5.2 4.5 L6.1 2.9 H9.9 L10.8 4.5"/>
+            </svg>
+            <span class="tip">real photo</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-info">
+        <h2 id="modalCommon">-</h2>
+        <p class="sci" id="modalSci"></p>
+        <div class="modal-stats">
+          <div><span class="n" id="modalAllTime">-</span><span class="lbl">all time</span></div>
+          <div><span class="n" id="modalWindow">-</span><span class="lbl" id="modalWindowLbl">window</span></div>
+          <div><span class="n" id="modalFirstSeen">-</span><span class="lbl">first seen</span></div>
+        </div>
+        <p class="desc" id="modalDesc"></p>
+        <div class="modal-actions">
+          <a id="modalWiki" class="chip ext" target="_blank" rel="noopener">wiki</a>
+          <a id="modalEbird" class="chip ext" target="_blank" rel="noopener">ebird</a>
+        </div>
+      </div>
+    </div>
+  </article>
+</div>
+
+<nav class="slider" id="slider" aria-label="View">
+  <i class="seg-pill" aria-hidden="true"></i>
+  <button type="button" data-i="0" aria-current="true">collage</button>
+  <button type="button" data-i="1">stats</button>
+  <button type="button" data-i="2">atlas</button>
+  <button type="button" data-i="3">live</button>
+  <button type="button" data-i="4">health</button>
+  <button type="button" data-i="5">config</button>
+</nav>
+
+<script>
+/* ============ Demo data ============
+   Real firmware replaces this by answering /api/status and
+   /api/detections; until then the page renders this sample so the
+   design can be judged with honest content. Detections are hours-ago
+   offsets so the time-window pill genuinely filters; allN is the
+   pretend all-time count; firstDays is days since first ever seen. */
+const SPECIES = [
+  { com: 'Northern Cardinal', sci: 'Cardinalis cardinalis', ebird: 'norcar', img: 'cardinalis-cardinalis.png', ar: 0.747, conf: 92, photo: true, allN: 412, firstDays: 210,
+    det: [0.3, 1.4, 3.2, 5.5, 8.1, 22, 26, 29, 47, 51, 73, 98, 120, 141, 150, 162] },
+  { com: 'Blue Jay', sci: 'Cyanocitta cristata', ebird: 'blujay', img: 'cyanocitta-cristata.png', ar: 0.597, conf: 88, photo: true, allN: 268, firstDays: 190,
+    det: [1.9, 4.5, 9, 25, 30, 49, 75, 96, 122, 144] },
+  { com: 'House Sparrow', sci: 'Passer domesticus', ebird: 'houspa', img: 'passer-domesticus.png', ar: 1.226, conf: 91, photo: true, allN: 351, firstDays: 200,
+    det: [0.8, 2.1, 5, 7, 21, 23, 45, 70, 95, 118, 140, 160] },
+  { com: 'House Finch', sci: 'Haemorhous mexicanus', ebird: 'houfin', img: 'haemorhous-mexicanus.png', ar: 1.05, conf: 68, photo: true, allN: 187, firstDays: 160,
+    det: [2.4, 6, 11, 27, 52, 78, 100, 130] },
+  { com: 'European Starling', sci: 'Sturnus vulgaris', ebird: 'eursta', img: 'sturnus-vulgaris.png', ar: 1.02, conf: 94, photo: true, allN: 203, firstDays: 170,
+    det: [5.2, 8.8, 24, 48, 72, 97, 124] },
+  { com: 'American Robin', sci: 'Turdus migratorius', ebird: 'amerob', img: 'turdus-migratorius.png', ar: 0.965, conf: 93, photo: true, allN: 154, firstDays: 180,
+    det: [3.6, 20, 44, 68, 92, 116, 139, 161] },
+  { com: 'American Goldfinch', sci: 'Spinus tristis', ebird: 'amegfi', img: 'spinus-tristis.png', ar: 0.748, conf: 95, photo: true, allN: 96, firstDays: 150,
+    det: [4.2, 10, 28, 55, 79, 110] },
+  { com: 'Mourning Dove', sci: 'Zenaida macroura', ebird: 'moudov', img: 'zenaida-macroura.png', ar: 1.027, conf: 90, photo: true, allN: 121, firstDays: 140,
+    det: [6.5, 12, 31, 56, 90, 133] },
+  { com: 'White-breasted Nuthatch', sci: 'Sitta carolinensis', ebird: 'whbnut', img: 'sitta-carolinensis.png', ar: 0.723, conf: 89, photo: true, allN: 64, firstDays: 90,
+    det: [7.8, 30, 58, 102] },
+  { com: 'Downy Woodpecker', sci: 'Dryobates pubescens', ebird: 'dowwoo', img: 'dryobates-pubescens.png', ar: 0.426, conf: 87, photo: true, allN: 51, firstDays: 120,
+    det: [13, 36, 84, 129] },
+  { com: 'Tufted Titmouse', sci: 'Baeolophus bicolor', ebird: 'tuftit', img: 'baeolophus-bicolor.png', ar: 1.277, conf: 84, photo: false, allN: 33, firstDays: 40,
+    det: [9.5, 33, 80] },
+  { com: 'Song Sparrow', sci: 'Melospiza melodia', ebird: 'sonspa', img: 'melospiza-melodia.png', ar: 1.124, conf: 76, photo: true, allN: 42, firstDays: 25,
+    det: [14, 37, 61, 108] },
+  { com: 'House Wren', sci: 'Troglodytes aedon', ebird: 'houwre', img: 'troglodytes-aedon.png', ar: 1.194, conf: 71, photo: true, allN: 18, firstDays: 15,
+    det: [18, 42, 66, 115] },
+  { com: 'Red-winged Blackbird', sci: 'Agelaius phoeniceus', ebird: 'rewbla', img: 'agelaius-phoeniceus.png', ar: 0.671, conf: 82, photo: true, allN: 7, firstDays: 6,
+    det: [40, 88, 136] },
+  { com: 'Northern Mockingbird', sci: 'Mimus polyglottos', ebird: 'normoc', img: 'mimus-polyglottos.png', ar: 1.531, conf: 86, photo: true, allN: 4, firstDays: 3,
+    det: [64, 112, 158] },
+  { com: 'Dark-eyed Junco', sci: 'Junco hyemalis', ebird: 'daejun', img: 'junco-hyemalis.png', ar: 1.447, conf: 55, photo: true, allN: 1, firstDays: 0,
+    det: [16.4] },
+];
+
+const ILLO_DIR = 'assets/illustrations/';
+const SVG_AR = 110 / 78;
+
+/* One shared perched-cutout silhouette for species without a bundled
+   illustration; per-species palette fills it. */
+function birdSvg(p) {
+  return `<svg viewBox="0 0 110 78" role="img" aria-hidden="true">
+    <line x1="6" y1="66" x2="104" y2="66" stroke="#8a6f4d" stroke-width="3" stroke-linecap="round"/>
+    <polygon points="16,56 42,44 42,54" fill="${p.wing}"/>
+    <ellipse cx="54" cy="45" rx="20" ry="14" fill="${p.body}"/>
+    ${p.belly ? `<ellipse cx="51" cy="50" rx="11" ry="6.5" fill="${p.belly}"/>` : ''}
+    <ellipse cx="51" cy="46" rx="11" ry="6" fill="${p.wing}" opacity="0.85"/>
+    <circle cx="71" cy="28" r="9.5" fill="${p.head || p.body}"/>
+    ${p.crest ? `<polygon points="69,20 76,9 76,20" fill="${p.head || p.body}"/>` : ''}
+    ${p.face ? `<polygon points="66,28 74,33 74,24" fill="${p.face}"/>` : ''}
+    <polygon points="79,26 89,29 79,32" fill="${p.beak}"/>
+    <circle cx="73.5" cy="26" r="1.6" fill="#17130f"/>
+    <line x1="51" y1="58" x2="50" y2="66" stroke="#5a5148" stroke-width="1.6"/>
+    <line x1="59" y1="57" x2="59" y2="66" stroke="#5a5148" stroke-width="1.6"/>
+  </svg>`;
+}
+/* Flight-pose (-2.png) aspect ratios; a species keyed here has an
+   in-flight variant alongside its perched cutout. */
+const FLIGHT_AR = {
+  'agelaius-phoeniceus': 1.013, 'baeolophus-bicolor': 0.966, 'cardinalis-cardinalis': 1.425,
+  'cyanocitta-cristata': 0.714, 'dryobates-pubescens': 1.331, 'haemorhous-mexicanus': 1.224,
+  'junco-hyemalis': 0.966, 'melanerpes-carolinus': 1.212, 'melospiza-melodia': 0.869,
+  'mimus-polyglottos': 0.805, 'passer-domesticus': 0.966, 'poecile-atricapillus': 1.262,
+  'quiscalus-quiscula': 1.044, 'sitta-carolinensis': 1.190, 'spinus-tristis': 0.850,
+  'sturnus-vulgaris': 1.133, 'thryothorus-ludovicianus': 1.928, 'troglodytes-aedon': 1.212,
+  'turdus-migratorius': 1.187, 'zenaida-macroura': 1.170,
+};
+const flightAr = sp => sp.img ? FLIGHT_AR[sp.img.slice(0, -4)] : undefined;
+function birdArt(sp, alt, eager, pose) {
+  const load = eager ? 'eager' : 'lazy';
+  // Real captured photo (served from the camera SD, /birds/IMG_n.jpg).
+  if (pose === 'photo' && sp.photoUrl)
+    return `<img src="${sp.photoUrl}" alt="${alt || ''} — camera photo" loading="${load}" decoding="async">`;
+  if (!sp.img) return birdSvg(sp.pal);
+  const flight = (pose === 2 || pose === '2') && flightAr(sp);
+  const file = flight ? sp.img.slice(0, -4) + '-2.png' : sp.img;
+  return `<img src="${ILLO_DIR}${file}" alt="${alt || ''}" loading="${load}" decoding="async">`;
+}
+
+/* ============ Helpers ============ */
+let windowH = 24;
+const winCount = sp => sp.det.filter(h => h <= windowH).length;
+const lastSeenMs = sp => {
+  const inWin = sp.det.filter(h => h <= windowH);
+  return inWin.length ? Date.now() - Math.min(...inWin) * 3600e3 : NaN;
+};
+const isAllWindow = () => windowH >= 1000000;
+function windowLabel(h) {
+  if (h <= 1) return 'past hour';
+  if (h <= 12) return 'past 12h';
+  if (h <= 24) return 'past 24h';
+  if (h <= 168) return 'past 7 days';
+  return 'all time';
+}
+const pad2 = n => (n < 10 ? '0' : '') + n;
+const padRank = n => (n < 10 ? '0' : '') + n;
+const fmtN = n => (+n).toLocaleString();
+
+/* ============ Sliding pills ============ */
+function placePill(box) {
+  const active = box.querySelector('[aria-current="true"]');
+  const pill = box.querySelector('.seg-pill');
+  if (!active || !pill) return;
+  pill.style.width = active.offsetWidth + 'px';
+  pill.style.transform = `translateX(${active.offsetLeft - 4}px)`;
+}
+function wireSeg(box, onPick) {
+  box.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+    box.querySelectorAll('button').forEach(b => b.removeAttribute('aria-current'));
+    btn.setAttribute('aria-current', 'true');
+    placePill(box);
+    onPick(btn);
+  }));
+  placePill(box);
+}
+
+/* ============ Views ============
+   Titles follow the AvianVisitors pattern: collage + stats share one
+   title (no fade between them); atlas gets its own. */
+const VIEW_TITLES = ['Seen Recently', 'Seen Recently', 'The Life List', 'Right Now', 'Camera Health', 'Configuration'];
+const SLIDE_MS = 480;
+const SWITCH_LEAD = SLIDE_MS - 100;
+const STATS_LEAD = SLIDE_MS - 200;
+const views = document.getElementById('views');
+const head = document.querySelector('.static-head');
+const titleEl = document.getElementById('staticTitle');
+let currentView = 0;
+function setTitleForView(i) {
+  const next = VIEW_TITLES[i];
+  if (titleEl.textContent === next) return;
+  head.classList.add('swap-out');
+  setTimeout(() => {
+    titleEl.textContent = next;
+    void head.offsetWidth;
+    head.classList.remove('swap-out');
+  }, 220);
+}
+const LIVE_IDX = 3;
+function setLiveStream(on) {
+  const img = document.getElementById('liveImg');
+  const empty = document.getElementById('liveEmpty');
+  if (on) {
+    empty.style.display = '';
+    empty.textContent = 'connecting to the camera\u2026';
+    img.onload = () => { empty.style.display = 'none'; img.style.display = ''; };
+    img.onerror = () => {
+      img.style.display = 'none';
+      empty.style.display = '';
+      empty.textContent = 'no camera connected \u2014 the preview appears when the firmware serves /stream';
+    };
+    img.src = '/stream?t=' + Math.floor(performance.now());
+  } else {
+    img.onload = img.onerror = null;
+    img.removeAttribute('src');
+    img.style.display = 'none';
+  }
+}
+function goView(i) {
+  const switching = i !== currentView;
+  currentView = i;
+  views.style.transform = `translateX(-${i * 100}%)`;
+  setTitleForView(i);
+  setLiveStream(i === LIVE_IDX);
+  if (!switching) return;
+  if (i === 0) playCollageEntrance();
+  else if (i === 1) playStatsEntrance(STATS_LEAD);
+  else if (i === 2) playAtlasEntrance(SWITCH_LEAD);
+}
+document.getElementById('liveRestart').addEventListener('click', () => {
+  if (currentView === LIVE_IDX) { setLiveStream(false); setLiveStream(true); }
+});
+wireSeg(document.getElementById('slider'), btn => goView(+btn.dataset.i));
+document.getElementById('devicePill').addEventListener('click', () => {
+  const s = document.getElementById('slider');
+  s.querySelectorAll('button').forEach(b => b.removeAttribute('aria-current'));
+  s.querySelector('[data-i="4"]').setAttribute('aria-current', 'true');
+  placePill(s);
+  goView(4);
+});
+
+/* ============ View 1 — Collage ============
+   Count-weighted cluster in the AvianVisitors manner: each species'
+   tile area follows n^EXP (sub-linear, so a frequent bird reads larger
+   without dwarfing the rare ones), floored so a 1-visit bird stays
+   legible, packed centre-out on an elliptical spiral, shrunk-to-fit,
+   then re-centred. Their original hit-tests alpha masks; with a small
+   set our rectangles rarely overlap, so plain per-tile hover works. */
+const collage = document.getElementById('collage');
+const FLY_PROB = 0.15; // chance a bird shows in its flight pose (rare)
+const collagePose = {};
+function renderCollage(animate) {
+  collage.innerHTML = '';
+  const items = SPECIES.map(s => ({ s, n: winCount(s) })).filter(x => x.n > 0);
+  if (!items.length) {
+    collage.innerHTML = '<p class="empty">no birds seen in this window.</p>';
+    return;
+  }
+  const W = collage.clientWidth, H = collage.clientHeight;
+  if (!W || !H) { setTimeout(() => renderCollage(animate), 80); return; }
+
+  // Pose: perched by default, rarely flight, sticky per species while
+  // it stays in the window; forget choices for species that left.
+  const present = {};
+  items.forEach(x => { present[x.s.sci] = 1; });
+  Object.keys(collagePose).forEach(k => { if (!present[k]) delete collagePose[k]; });
+
+  const EXP = 0.62;
+  const budget = W * H * 0.40;
+  const minArea = W * H * 0.014;
+  const PAD = 8;
+  const tiles = items.map(x => {
+    let pose = collagePose[x.s.sci];
+    if (pose === undefined) {
+      pose = flightAr(x.s) && Math.random() < FLY_PROB ? 2 : 1;
+      collagePose[x.s.sci] = pose;
+    }
+    return {
+      s: x.s, n: x.n, pose,
+      ar: pose === 2 ? flightAr(x.s) : (x.s.ar || SVG_AR),
+      score: Math.pow(Math.max(1, x.n), EXP),
+    };
+  });
+  const sumScore = tiles.reduce((a, t) => a + t.score, 0) || 1;
+  tiles.forEach(t => { t.area = Math.max(minArea, budget * t.score / sumScore); });
+  const sumA = tiles.reduce((a, t) => a + t.area, 0);
+  if (sumA > budget) {
+    const fixed = tiles.filter(t => t.area <= minArea + 1e-9).reduce((a, t) => a + t.area, 0);
+    const flex = sumA - fixed;
+    const shrink = flex > 0 ? Math.min(1, Math.max(0, budget - fixed) / flex) : 1;
+    tiles.forEach(t => { if (t.area > minArea + 1e-9) t.area *= shrink; });
+  }
+  tiles.forEach(t => { t.w = Math.sqrt(t.area * t.ar); t.h = t.w / t.ar; });
+
+  const narrow = W <= 700;
+  const xBias = narrow ? 1 : 1.55;   // horizontal ellipse on wide screens
+  function pack() {
+    const placed = [];
+    const collides = (x, y, w, h) => placed.some(p =>
+      x < p.x + p.w + PAD && x + w + PAD > p.x &&
+      y < p.y + p.h + PAD && y + h + PAD > p.y);
+    tiles.slice().sort((a, b) => b.area - a.area).forEach(t => {
+      let done = false;
+      for (let r = 0; r < Math.max(W, H) && !done; r += 6) {
+        const steps = Math.max(8, Math.round(r / 4));
+        for (let k = 0; k < steps && !done; k++) {
+          const a = (k / steps) * Math.PI * 2 + r * 0.03;
+          const x = W / 2 + Math.cos(a) * r * xBias - t.w / 2;
+          const y = H / 2 + Math.sin(a) * r - t.h / 2;
+          if (!collides(x, y, t.w, t.h)) { t.x = x; t.y = y; placed.push(t); done = true; }
+        }
+      }
+      if (!done) { t.x = -9999; t.y = -9999; placed.push(t); }
+    });
+    return placed;
+  }
+  let placed = pack();
+  const bounds = () => {
+    let L = Infinity, R = -Infinity, T = Infinity, B = -Infinity;
+    placed.forEach(t => {
+      if (t.x < -1000) return;
+      L = Math.min(L, t.x); R = Math.max(R, t.x + t.w);
+      T = Math.min(T, t.y); B = Math.max(B, t.y + t.h);
+    });
+    return { L, R, T, B };
+  };
+  let b = bounds();
+  for (let iter = 0; iter < 8; iter++) {
+    const missing = placed.some(t => t.x < -1000);
+    const overflow = b.L < 0 || b.T < 0 || b.R > W || b.B > H;
+    if (!missing && !overflow) break;
+    tiles.forEach(t => { t.w *= 0.93; t.h *= 0.93; });
+    placed = pack();
+    b = bounds();
+  }
+  const dx = W / 2 - (b.L + b.R) / 2, dy = H / 2 - (b.T + b.B) / 2;
+  placed.forEach(t => { if (t.x > -1000) { t.x += dx; t.y += dy; } });
+
+  const tip = document.createElement('div');
+  tip.className = 'collage-tip';
+  tip.setAttribute('aria-hidden', 'true');
+
+  placed.forEach(t => {
+    if (t.x < -1000) return;
+    const btn = document.createElement('button');
+    btn.className = 'gtile';
+    btn.type = 'button';
+    btn.setAttribute('data-sci', t.s.sci);
+    btn.setAttribute('aria-label', t.s.com);
+    btn.title = `${t.s.com} · ${t.n} ${t.n === 1 ? 'visit' : 'visits'} ${windowLabel(windowH)}`;
+    btn.style.left = t.x + 'px';
+    btn.style.top = t.y + 'px';
+    btn.style.width = t.w + 'px';
+    btn.style.height = t.h + 'px';
+    btn.innerHTML = birdArt(t.s, t.s.com, true, t.pose);
+    btn.addEventListener('click', () => openModal(t.s, t.pose));
+    btn.addEventListener('mouseenter', () => {
+      btn.classList.add('is-hover');
+      tip.innerHTML = `<span class="ct-name">${t.s.com}</span> · <span class="ct-n">${t.n}</span> <span class="ct-w">${t.n === 1 ? 'visit' : 'visits'} · ${windowLabel(windowH)}</span>`;
+      tip.setAttribute('aria-hidden', 'false');
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.classList.remove('is-hover');
+      tip.setAttribute('aria-hidden', 'true');
+    });
+    collage.appendChild(btn);
+  });
+  collage.appendChild(tip);
+  if (animate) playCollageEntrance();
+}
+
+/* Staggered centre-out bloom, delayed by distance from the collage centre. */
+let collageEntranceT = null;
+function playCollageEntrance() {
+  const tiles = [...collage.querySelectorAll('.gtile')];
+  if (!tiles.length) return;
+  const cx = collage.clientWidth / 2, cy = collage.clientHeight / 2;
+  let maxD = 1;
+  const info = tiles.map(t => {
+    const d = Math.hypot(t.offsetLeft + t.offsetWidth / 2 - cx, t.offsetTop + t.offsetHeight / 2 - cy);
+    maxD = Math.max(maxD, d);
+    return { el: t, d };
+  });
+  const SPREAD = 520;
+  info.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = (o.d / maxD * SPREAD).toFixed(0) + 'ms'; });
+  void collage.offsetWidth;
+  info.forEach(o => o.el.classList.add('entering'));
+  clearTimeout(collageEntranceT);
+  collageEntranceT = setTimeout(() => {
+    info.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = ''; });
+  }, SPREAD + 520);
+}
+
+/* ============ View 2 — Stats ============
+   The editorial detection timeline: one evenly-spaced column per
+   species, ordered by last-detection time (x = time). The ink square
+   fills its column; its height up the plot encodes count. Rotated
+   two-line labels sit just above each square; hairline gridlines mark
+   the column boundaries; per-column timestamps run along the x-axis. */
+function drawHistograms(animate) {
+  const tl = document.getElementById('statsTimeline');
+  const all = SPECIES.map(s => ({ s, n: winCount(s), last: lastSeenMs(s) })).filter(x => x.n > 0);
+  if (!all.length) {
+    tl.innerHTML = '<div class="stats-tl-empty">no detections in this window</div>';
+    return;
+  }
+  const isMobile = (window.innerWidth || 800) <= 700;
+  const containerW = Math.max(140, (tl.clientWidth || window.innerWidth || 800) - 34);
+  const MIN_COL = isMobile ? 52 : 22;
+  const cap = isMobile ? all.length : Math.max(3, Math.floor(containerW / MIN_COL));
+  const trimmed = all.length > cap;
+  let species = all.slice();
+  if (trimmed) {
+    species.sort((a, b) => b.n - a.n);
+    species = species.slice(0, cap);
+  }
+  species.sort((a, b) => a.last - b.last);   // x-axis is time, oldest → newest
+
+  const C = species.length;
+  const maxN = species.reduce((m, x) => Math.max(m, x.n), 1);
+  const colW = isMobile ? MIN_COL : containerW / C;
+  const plotW = isMobile ? Math.max(containerW, C * colW) : containerW;
+  const sq = Math.max(6, Math.min(colW, isMobile ? 60 : 48));
+  const LABEL_GAP = 6;
+  const SPAN = 0.55;
+
+  let ticks = [];
+  if (maxN <= 8) { for (let v = 0; v <= maxN; v++) ticks.push(v); }
+  else {
+    for (let di = 0; di <= 4; di++) ticks.push(Math.round(maxN * di / 4));
+    ticks[ticks.length - 1] = maxN;
+  }
+  const yaxis = ticks.map(v =>
+    `<span class="stats-tl-ytick" style="bottom:${(v / maxN * SPAN * 100).toFixed(1)}%">${v}</span>`).join('');
+
+  const fmtTs = ms => {
+    if (isNaN(ms)) return '';
+    const d = new Date(ms);
+    if (windowH <= 36) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    if (windowH <= 75 * 24) return (d.getMonth() + 1) + '/' + d.getDate();
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  let gridlines = '';
+  for (let gi = 1; gi <= C; gi++) {
+    gridlines += `<i class="stats-tl-gridline" style="left:${(gi / C * 100).toFixed(3)}%"></i>`;
+  }
+  let cols = '', xaxis = '';
+  species.forEach((x, i) => {
+    const centerPct = ((i + 0.5) / C * 100).toFixed(3);
+    const bottomPct = (x.n / maxN * SPAN * 100).toFixed(1);
+    cols += `<div class="stats-tl-col" data-sci="${x.s.sci}" style="left:${centerPct}%;width:${colW.toFixed(2)}px">`
+      + `<div class="stats-tl-square" style="bottom:${bottomPct}%;width:${sq.toFixed(1)}px;height:${sq.toFixed(1)}px"></div>`
+      + `<div class="stats-tl-label" style="bottom:calc(${bottomPct}% + ${sq + LABEL_GAP}px)"><span class="com">${x.s.com}</span><span class="sci">${x.s.sci}</span></div>`
+      + `</div>`;
+    const lab = fmtTs(x.last);
+    if (lab) xaxis += `<span class="stats-tl-xtick" style="left:${centerPct}%">${lab}</span>`;
+  });
+  const note = trimmed ? `<div class="stats-tl-cap">${C} most-seen of ${all.length}</div>` : '';
+  tl.innerHTML = `<div class="stats-tl-yaxis">${yaxis}</div>`
+    + `<div class="stats-tl-plot"${isMobile ? ` style="width:${Math.round(plotW)}px"` : ''}>${gridlines}${cols}${xaxis}</div>`
+    + note;
+  if (animate) playStatsEntrance();
+}
+
+/* Cross-highlight between the timeline squares and the side lists —
+   delegated off the stats view so it survives re-renders. */
+(function wireStatsHighlight() {
+  const v1 = document.getElementById('v1');
+  function setHi(sci, on) {
+    if (!sci) return;
+    v1.querySelectorAll(`.stats-tl-col[data-sci="${sci}"], .stats-side li[data-sci="${sci}"]`)
+      .forEach(el => el.classList.toggle('sync-hi', on));
+  }
+  v1.addEventListener('mouseover', ev => {
+    const el = ev.target.closest && ev.target.closest('[data-sci]');
+    if (el) setHi(el.getAttribute('data-sci'), true);
+  });
+  v1.addEventListener('mouseout', ev => {
+    const el = ev.target.closest && ev.target.closest('[data-sci]');
+    if (el) {
+      if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
+      setHi(el.getAttribute('data-sci'), false);
+    }
+  });
+})();
+
+function liRow(yr, name, ct, sci) {
+  return `<li${sci ? ` data-sci="${sci}"` : ''}><span class="yr">${yr}</span><span>${name}</span><span class="ct">${ct}</span></li>`;
+}
+function renderStatsLists() {
+  const countWithin = h => SPECIES.reduce((a, s) => a + s.det.filter(x => x <= h).length, 0);
+  const hoursSinceMidnight = (Date.now() - new Date().setHours(0, 0, 0, 0)) / 3600e3;
+  const allTotal = SPECIES.reduce((a, s) => a + s.allN, 0);
+  document.getElementById('statsByPeriod').innerHTML =
+      liRow('NOW', 'last hour', fmtN(countWithin(1)))
+    + liRow('TODAY', 'today', fmtN(countWithin(hoursSinceMidnight)))
+    + liRow('WEEK', 'last 7 days', fmtN(countWithin(168)))
+    + liRow('ALL', 'all time', fmtN(allTotal));
+
+  const ranked = SPECIES.map(s => ({ s, n: winCount(s) }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 5);
+  document.getElementById('statsTopSpec').innerHTML = ranked.length
+    ? ranked.map((x, i) => liRow(padRank(i + 1), x.s.com, fmtN(x.n), x.s.sci)).join('')
+    : liRow('-', 'no detections in window', '');
+  document.getElementById('statsTopSpecCap').textContent = 'most-seen, ' + windowLabel(windowH);
+
+  const fs = SPECIES.slice().sort((a, b) => a.firstDays - b.firstDays).slice(0, 5);
+  document.getElementById('statsFirstSeen').innerHTML =
+    fs.map(s => liRow(s.firstDays === 0 ? 'today' : s.firstDays + 'd ago', s.com, '', s.sci)).join('');
+}
+
+let statsEntranceT = null;
+function playStatsEntrance(lead) {
+  lead = lead || 0;
+  const plot = document.querySelector('.stats-tl-plot');
+  if (!plot) return;
+  const SPREAD = 460;
+  const items = [...plot.querySelectorAll('.stats-tl-col, .stats-tl-gridline, .stats-tl-xtick')]
+    .map(el => ({ el, d: (parseFloat(el.style.left) || 0) / 100 * SPREAD }));
+  const yaxis = document.querySelector('.stats-tl-yaxis');
+  if (yaxis) items.push({ el: yaxis, d: 0 });
+  const side = document.querySelector('.stats-side');
+  if (side) {
+    side.querySelectorAll('h3, small').forEach(el => items.push({ el, d: 40 }));
+    const rows = [...side.querySelectorAll('li')];
+    rows.forEach((el, i) => items.push({ el, d: 80 + i / Math.max(1, rows.length - 1) * SPREAD }));
+  }
+  items.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = Math.round(lead + o.d) + 'ms'; });
+  void plot.offsetWidth;
+  items.forEach(o => o.el.classList.add('entering'));
+  clearTimeout(statsEntranceT);
+  statsEntranceT = setTimeout(() => {
+    items.forEach(o => { o.el.classList.remove('entering'); o.el.style.animationDelay = ''; });
+  }, lead + SPREAD + 560);
+}
+
+/* ============ View 3 — Atlas ============ */
+const wikiUrl = sci => 'https://en.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
+const ebirdUrl = sp => sp.ebird ? 'https://ebird.org/species/' + sp.ebird : 'https://ebird.org/explore';
+let atlasSortMode = 'count';
+function renderAtlas(animate) {
+  const grid = document.getElementById('atlasGrid');
+  const filtered = isAllWindow() ? SPECIES.slice() : SPECIES.filter(s => winCount(s) > 0);
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="atlas-empty"><p>No detections in this window.</p><p class="hint">Try a longer time window.</p></div>';
+    return;
+  }
+  const species = filtered.slice();
+  if (atlasSortMode === 'count') species.sort((a, b) => b.allN - a.allN);
+  else if (atlasSortMode === 'recent') species.sort((a, b) => Math.min(...a.det) - Math.min(...b.det));
+  else species.sort((a, b) => a.com.localeCompare(b.com));
+
+  grid.innerHTML = species.map(s => {
+    const win = winCount(s);
+    const isLifer = !isAllWindow() && s.firstDays * 24 <= windowH;
+    const statRows = isAllWindow()
+      ? `<div><span class="n">${fmtN(s.allN)}</span>all time</div>`
+      : `<div><span class="n">${fmtN(win)}</span>${windowLabel(windowH)}</div>`
+        + `<div><span class="n">${fmtN(s.allN)}</span>all time</div>`;
+    const conf = s.conf >= 80
+      ? `<span class="chip soft">${s.conf}%</span>`
+      : `<span class="chip warn">${s.conf}% confident</span>`;
+    const illo = s.photo ? '' : `<span class="chip soft">illustration</span>`;
+    return `<article class="bird-card" data-sci="${s.sci}">`
+      + (isLifer ? '<span class="lifer-badge" title="new to the life list in this window">lifer</span>' : '')
+      + `<div class="stat">${statRows}</div>`
+      + `<div class="img-wrap">${birdArt(s, s.com)}</div>`
+      + `<h3>${s.com}</h3>`
+      + `<div class="sci">${s.sci}</div>`
+      + `<div class="actions">${conf}${illo}`
+      +   `<a class="chip ext" href="${wikiUrl(s.sci)}" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>`
+      +   `<a class="chip ext" href="${ebirdUrl(s)}" target="_blank" rel="noopener" aria-label="eBird">ebird</a>`
+      + `</div></article>`;
+  }).join('');
+  grid.querySelectorAll('.bird-card').forEach(card => {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', ev => {
+      if (ev.target.closest('a')) return;   // wiki/ebird chips keep their own click
+      const sp = SPECIES.find(s => s.sci === card.dataset.sci);
+      if (sp) openModal(sp, 1);
+    });
+  });
+  if (animate) playAtlasEntrance();
+}
+
+/* Atlas entrance: cards rise + fade row by row, top to bottom. */
+let atlasEntranceT = null;
+function playAtlasEntrance(lead) {
+  lead = lead || 0;
+  const grid = document.getElementById('atlasGrid');
+  const cards = [...grid.querySelectorAll('.bird-card')];
+  if (!cards.length) return;
+  const uniqTops = [...new Set(cards.map(c => c.offsetTop))].sort((a, b) => a - b);
+  const rowOf = {}; uniqTops.forEach((t, i) => { rowOf[t] = i; });
+  const PER_ROW = 90, MAX_ROW = 10;
+  cards.forEach(c => {
+    c.classList.remove('entering');
+    c.style.animationDelay = (lead + Math.min(rowOf[c.offsetTop] || 0, MAX_ROW) * PER_ROW) + 'ms';
+  });
+  void grid.offsetWidth;
+  cards.forEach(c => c.classList.add('entering'));
+  clearTimeout(atlasEntranceT);
+  atlasEntranceT = setTimeout(() => {
+    cards.forEach(c => { c.classList.remove('entering'); c.style.animationDelay = ''; });
+  }, lead + MAX_ROW * PER_ROW + 540);
+}
+
+wireSeg(document.getElementById('atlasSort'), btn => {
+  atlasSortMode = btn.dataset.sort;
+  renderAtlas(true);
+});
+
+/* ============ Detail modal ============
+   Opens from a collage tile or atlas card. The pose toggle swaps
+   between the perched cutout and the -2 in-flight variant with a
+   short opacity fade; it hides for species with no flight art. */
+const detailModal = document.getElementById('detail-modal');
+const modalArt = document.getElementById('modalArt');
+const poseToggle = document.getElementById('modalPoseToggle');
+let modalSpecies = null;
+function setModalPose(pose, fade) {
+  if (!modalSpecies) return;
+  poseToggle.querySelectorAll('button').forEach(b =>
+    b.dataset.pose === String(pose) ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current'));
+  placePill(poseToggle);
+  const swap = () => {
+    modalArt.innerHTML = birdArt(modalSpecies, modalSpecies.com, true, pose);
+    // If the real photo fails to load (e.g. served-elsewhere demo), fall
+    // back to the illustration rather than showing a broken image.
+    if (pose === 'photo') {
+      const el = modalArt.querySelector('img');
+      if (el) el.onerror = () => setModalPose(1, false);
+    }
+  };
+  const img = modalArt.querySelector('img');
+  if (fade && img) {
+    img.classList.add('swapping');
+    setTimeout(() => {
+      swap();
+      const next = modalArt.querySelector('img');
+      if (next) {
+        next.classList.add('swapping');
+        (next.complete ? Promise.resolve() : next.decode().catch(() => {}))
+          .then(() => requestAnimationFrame(() => next.classList.remove('swapping')));
+      }
+    }, 120);
+  } else swap();
+}
+function openModal(sp, pose) {
+  modalSpecies = sp;
+  document.getElementById('modalCommon').textContent = sp.com;
+  document.getElementById('modalSci').textContent = sp.sci;
+  document.getElementById('modalAllTime').textContent = fmtN(sp.allN);
+  document.getElementById('modalWindow').textContent = fmtN(winCount(sp));
+  document.getElementById('modalWindowLbl').textContent = windowLabel(windowH);
+  document.getElementById('modalFirstSeen').textContent = sp.firstDays === 0 ? 'today' : sp.firstDays + 'd ago';
+  document.getElementById('modalDesc').textContent =
+    `Identified at ${sp.conf}% confidence` +
+    (sp.conf < 80 ? ' — below the publish threshold, so its photos carry a confidence note.' : '.') +
+    (sp.photo ? '' : ' No camera photo has cleared the quality bar yet; the card shows the bundled illustration.');
+  document.getElementById('modalWiki').href = wikiUrl(sp.sci);
+  document.getElementById('modalEbird').href = ebirdUrl(sp);
+  // Per-button availability: perched always; flight if a -2 variant exists;
+  // real photo if the camera has captured one for this species.
+  const avail = { '1': true, '2': !!flightAr(sp), 'photo': !!sp.photoUrl };
+  let shown = 0;
+  poseToggle.querySelectorAll('button').forEach(b => {
+    const ok = avail[b.dataset.pose];
+    b.dataset.hidden = ok ? 'false' : 'true';
+    if (ok) shown++;
+  });
+  poseToggle.dataset.unavailable = shown > 1 ? 'false' : 'true';
+  setModalPose(pose && avail[String(pose)] ? pose : 1, false);
+  detailModal.classList.add('is-open');
+  detailModal.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => placePill(poseToggle));
+}
+function closeModal() {
+  detailModal.classList.remove('is-open');
+  detailModal.setAttribute('aria-hidden', 'true');
+}
+poseToggle.querySelectorAll('button').forEach(btn =>
+  btn.addEventListener('click', () => {
+    const p = btn.dataset.pose;
+    setModalPose(p === 'photo' ? 'photo' : +p, true);
+  }));
+detailModal.addEventListener('click', ev => { if (ev.target.closest('[data-close]')) closeModal(); });
+addEventListener('keydown', ev => { if (ev.key === 'Escape') closeModal(); });
+
+/* Time window: re-render all three data views. */
+wireSeg(document.getElementById('winPick'), btn => {
+  windowH = +btn.dataset.h;
+  renderCollage(currentView === 0);
+  renderStatsLists();
+  drawHistograms(currentView === 1);
+  renderAtlas(currentView === 2);
+});
+
+/* ============ Configuration ============ */
+const MODE_HINTS = {
+  local: 'Nothing leaves the school network. Birds live on this page and on the memory card; the public site never sees this camera.',
+  diag:  'Only health numbers leave the building — signal, memory, counters. No images, no species names. Support staff can see the camera is alive; the birds stay yours.',
+  cloud: 'Detections and small photos are published to the shared gallery, where anyone with the link can watch your feeder alongside the other schools.',
+};
+const modeHint = document.getElementById('modeHint');
+wireSeg(document.getElementById('modeSeg'), btn => { modeHint.textContent = MODE_HINTS[btn.dataset.mode]; });
+modeHint.textContent = MODE_HINTS.cloud;
+
+const themeSeg = document.getElementById('themeSeg');
+const savedTheme = (() => { try { return localStorage.getItem('birdwatch:theme') || 'light'; } catch (e) { return 'light'; } })();
+themeSeg.querySelectorAll('button').forEach(b => {
+  if (b.dataset.theme === savedTheme) b.setAttribute('aria-current', 'true');
+  else b.removeAttribute('aria-current');
+});
+wireSeg(themeSeg, btn => {
+  const t = btn.dataset.theme;
+  if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  try { localStorage.setItem('birdwatch:theme', t); } catch (e) {}
+});
+
+[['pubRange', 'pubVal', v => v + '%'], ['revRange', 'revVal', v => v + '%'],
+ ['coolRange', 'coolVal', v => v + ' s'], ['capRange', 'capVal', v => v]]
+.forEach(([r, o, f]) => {
+  const range = document.getElementById(r), out = document.getElementById(o);
+  range.addEventListener('input', () => { out.textContent = f(range.value); });
+});
+
+document.getElementById('dayToggle').addEventListener('click', e => {
+  const b = e.currentTarget;
+  b.setAttribute('aria-checked', b.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+});
+
+const saveState = document.getElementById('saveState');
+document.getElementById('saveBtn').addEventListener('click', () => {
+  saveState.textContent = 'saved to flash — survives reboot';
+  saveState.classList.add('ok');
+  setTimeout(() => {
+    saveState.textContent = 'unsaved changes are kept until reboot';
+    saveState.classList.remove('ok');
+  }, 2600);
+});
+
+/* ============ Firmware hookup ============
+   When the esp32aicam firmware answers /api/status, the demo data is
+   replaced by the camera's real detection log, the health view goes
+   live (refreshing every 10 s), and the configuration form reads and
+   writes /api/config. Species map onto the bundled illustrations by
+   kebab-case scientific name; unknown species fall back to the SVG
+   silhouette. */
+const PERCHED_AR = {
+  'agelaius-phoeniceus': 0.672, 'baeolophus-bicolor': 1.277, 'cardinalis-cardinalis': 0.747,
+  'cyanocitta-cristata': 0.597, 'dryobates-pubescens': 0.427, 'haemorhous-mexicanus': 1.051,
+  'junco-hyemalis': 1.448, 'melanerpes-carolinus': 0.783, 'melospiza-melodia': 1.125,
+  'mimus-polyglottos': 1.531, 'passer-domesticus': 1.226, 'poecile-atricapillus': 1.373,
+  'poecile-carolinensis': 0.527, 'quiscalus-quiscula': 1.002, 'sitta-carolinensis': 0.723,
+  'spinus-tristis': 0.748, 'sturnus-vulgaris': 1.021, 'thryothorus-ludovicianus': 0.978,
+  'troglodytes-aedon': 1.194, 'turdus-migratorius': 0.966, 'zenaida-macroura': 1.027,
+  'zonotrichia-albicollis': 0.639,
+};
+const GENERIC_PAL = { body: '#a8a29a', wing: '#8a847c', beak: '#4a4540' };
+const slugifySci = sci => (sci || '').toLowerCase().trim().replace(/ /g, '-');
+let LIVE = false;
+
+async function apiJson(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(path + ' -> ' + r.status);
+  return r.json();
+}
+
+function speciesFromDetections(dets) {
+  const now = Date.now();
+  const by = {};
+  dets.forEach(d => {
+    const key = d.scientific_name || d.common_name;
+    if (!key || !d.published) return;
+    const s = by[key] || (by[key] = {
+      com: d.common_name || key, sci: d.scientific_name || '',
+      conf: 0, allN: 0, firstTs: Infinity, lastTs: 0, det: [],
+      bestConf: -1, photoUrl: '',
+    });
+    s.allN++;
+    const ts = (d.ts || 0) * 1000;
+    s.det.push(Math.max(0.02, (now - ts) / 3600e3));
+    if (ts >= s.lastTs) { s.lastTs = ts; s.conf = d.confidence_pct || 0; }
+    if (ts < s.firstTs) s.firstTs = ts;
+    // Best-ever photo for this species = highest-confidence capture (design
+    // doc §9). Powers the "real photo" toggle in the detail modal.
+    if (d.image && (d.confidence_pct || 0) >= s.bestConf) {
+      s.bestConf = d.confidence_pct || 0;
+      s.photoUrl = d.image;
+    }
+  });
+  return Object.values(by).map(s => {
+    const slug = slugifySci(s.sci);
+    const sp = {
+      com: s.com, sci: s.sci, conf: s.conf, photo: true, allN: s.allN,
+      firstDays: Math.max(0, Math.floor((now - s.firstTs) / 864e5)),
+      det: s.det.sort((a, b) => a - b),
+      pal: GENERIC_PAL,
+      photoUrl: s.photoUrl,
+    };
+    if (PERCHED_AR[slug]) { sp.img = slug + '.png'; sp.ar = PERCHED_AR[slug]; }
+    return sp;
+  });
+}
+
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  return d > 0 ? `${d} d ${h} h` : h > 0 ? `${h} h ${m} m` : `${m} m`;
+}
+
+function applyStatus(st) {
+  const set = (id, v) => { document.getElementById(id).textContent = v; };
+  set('stStatus', 'Online');
+  set('stStatusSub', (st.detecting ? 'detecting' : 'paused') + (st.analysis_in_progress ? ' · analyzing' : ''));
+  set('stRssi', st.rssi + ' dBm');
+  set('stRssiSub', st.rssi > -60 ? 'good' : st.rssi > -75 ? 'fair' : 'weak');
+  set('stUp', fmtUptime(st.uptime_s));
+  set('stUpSub', 'fw ' + st.fw + ' · ' + st.fw_base + ' base');
+  set('stMem', Math.round(st.free_heap / 1024) + ' KB');
+  set('stMemSub', 'psram ' + (st.psram_free / 1048576).toFixed(1) + ' MB free');
+  set('stLux', st.light_sensor ? Math.round(st.lux).toLocaleString() + ' lux' : 'no sensor');
+  set('stLuxSub', st.light_sensor ? (st.daylight ? 'daylight — detecting' : 'night — paused') : 'daylight gate open');
+  const c = st.counters;
+  set('stApi', c.api_calls + ' / ' + c.api_cap);
+  set('stApiSub', Math.round(c.api_calls / Math.max(1, c.api_cap) * 100) + '% of daily cap');
+  document.getElementById('stApiCard').classList.toggle('warn', c.api_calls >= c.api_cap * 0.6);
+  set('fTrig', c.triggers); set('fGate', c.stage1_pass); set('fId', c.identified); set('fPub', c.published);
+  document.getElementById('errPane').textContent = (st.errors && st.errors.length)
+    ? st.errors.join('\n') : 'no recent errors';
+  document.getElementById('devPillLabel').textContent = st.device_id;
+  document.getElementById('reachNote').innerHTML =
+    'this camera · ' + st.ip + ' · ask your it staff for a dhcp reservation';
+}
+
+function applyReviewQueue(dets) {
+  const held = dets.filter(d => !d.published).slice(0, 6);
+  const rows = held.map(d => {
+    const t = new Date((d.ts || 0) * 1000);
+    const hh = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    return `<tr><td>${hh}</td><td class="serif">${d.common_name || 'Unidentified bird'}</td>` +
+      `<td>${d.confidence_pct}%</td><td><span class="pill held">held</span></td></tr>`;
+  }).join('');
+  document.getElementById('revTable').innerHTML =
+    '<tr><th>time</th><th>best guess</th><th>confidence</th><th>status</th></tr>' +
+    (rows || '<tr><td colspan="4">queue is empty</td></tr>');
+}
+
+function applyConfig(cfg) {
+  document.getElementById('cfgDevId').value = cfg.device_id;
+  document.getElementById('cfgName').value = cfg.name;
+  document.getElementById('cfgRegion').value = cfg.region_hint;
+  const modeSegEl = document.getElementById('modeSeg');
+  modeSegEl.querySelectorAll('button').forEach(b => {
+    if (b.dataset.mode === cfg.sharing_mode) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  });
+  placePill(modeSegEl);
+  modeHint.textContent = MODE_HINTS[cfg.sharing_mode] || MODE_HINTS.local;
+  [['pubRange', 'pubVal', cfg.pub_threshold, v => v + '%'],
+   ['revRange', 'revVal', cfg.rev_threshold, v => v + '%'],
+   ['coolRange', 'coolVal', cfg.cooldown_s, v => v + ' s'],
+   ['capRange', 'capVal', cfg.daily_cap, v => v]]
+  .forEach(([r, o, v, f]) => {
+    document.getElementById(r).value = v;
+    document.getElementById(o).textContent = f(v);
+  });
+  document.getElementById('dayToggle').setAttribute('aria-checked', cfg.daylight_only ? 'true' : 'false');
+}
+
+async function saveLiveConfig() {
+  const mode = document.getElementById('modeSeg').querySelector('[aria-current="true"]');
+  const body = {
+    device_id: document.getElementById('cfgDevId').value,
+    name: document.getElementById('cfgName').value,
+    region_hint: document.getElementById('cfgRegion').value,
+    sharing_mode: mode ? mode.dataset.mode : 'local',
+    pub_threshold: +document.getElementById('pubRange').value,
+    rev_threshold: +document.getElementById('revRange').value,
+    cooldown_s: +document.getElementById('coolRange').value,
+    daily_cap: +document.getElementById('capRange').value,
+    daylight_only: document.getElementById('dayToggle').getAttribute('aria-checked') === 'true',
+  };
+  await apiJson('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+let liveFingerprint = '';
+async function refreshLive(force) {
+  const [st, dets] = await Promise.all([
+    apiJson('/api/status'),
+    apiJson('/api/detections?limit=60&all=1'),
+  ]);
+  applyStatus(st);
+  applyReviewQueue(dets.detections);
+  // Only rebuild the bird views when the log actually changed — a
+  // steady 10s re-render would replay entrances and drop hover state.
+  const fp = dets.detections.length + ':' + (dets.detections[0] ? dets.detections[0].id : 0);
+  if (!force && fp === liveFingerprint) return;
+  const firstLoad = liveFingerprint === '';
+  liveFingerprint = fp;
+  const live = speciesFromDetections(dets.detections);
+  SPECIES.length = 0;
+  live.forEach(s => SPECIES.push(s));
+  renderStatsLists();
+  drawHistograms(firstLoad && currentView === 1);
+  renderAtlas(firstLoad && currentView === 2);
+  renderCollage(firstLoad && currentView === 0);
+}
+
+/* ============ Cloud data source (public site) ============
+   The public site reads from Supabase — the camera pushes detections and
+   heartbeats there (design doc §5). Fill SUPABASE below after creating the
+   project; left blank, the page shows the built-in demo data so it's
+   viewable before the backend exists. Uses the anon key, which per the
+   schema's row-level security can only READ published birds. */
+const SUPABASE = { url: 'https://uxldqdpazqritavehywf.supabase.co', anon: '' };   // anon key still needed
+
+async function supaSelect(path) {
+  const r = await fetch(`${SUPABASE.url}/rest/v1/${path}`,
+    { headers: { apikey: SUPABASE.anon, Authorization: 'Bearer ' + SUPABASE.anon } });
+  if (!r.ok) throw new Error('supabase ' + r.status);
+  return r.json();
+}
+
+// Supabase detections row -> the shape speciesFromDetections expects.
+function mapRow(row) {
+  return {
+    id: row.id,
+    ts: Math.floor(Date.parse(row.seen_at) / 1000),
+    common_name: row.common_name,
+    scientific_name: row.scientific_name,
+    confidence_pct: row.confidence_pct,
+    count: row.count,
+    notes: row.notes,
+    image: row.image_url || '',
+    published: row.published,
+  };
+}
+
+function applyCloudStatus(dev, hb) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('devPillLabel', dev ? (dev.device_id || 'camera') : 'camera');
+  set('reachNote', 'published to the cloud · read-only public view');
+  if (!hb) { set('stStatus', 'No data'); set('stStatusSub', 'no heartbeat received yet'); return; }
+  const ageMs = Date.now() - Date.parse(hb.ts);
+  const online = ageMs < 5 * 60 * 1000;
+  const mins = Math.round(ageMs / 60000);
+  set('stStatus', online ? 'Online' : 'Offline');
+  set('stStatusSub', online ? 'reporting' : (mins < 120 ? mins + ' min ago' : Math.round(mins / 60) + ' h ago'));
+  set('stRssi', (hb.rssi ?? '—') + ' dBm');
+  set('stRssiSub', hb.rssi > -60 ? 'good' : hb.rssi > -75 ? 'fair' : 'weak');
+  set('stUp', hb.uptime_s != null ? fmtUptime(hb.uptime_s) : '—');
+  set('stUpSub', 'fw ' + (hb.firmware_version || (dev && dev.firmware_version) || '—'));
+  set('stMem', hb.free_heap != null ? Math.round(hb.free_heap / 1024) + ' KB' : '—');
+  set('stMemSub', 'reported by the camera');
+  set('stLux', hb.lux != null ? Math.round(hb.lux).toLocaleString() + ' lux' : '—');
+  set('stLuxSub', '');
+  const cap = hb.api_cap || 60;
+  set('stApi', (hb.api_calls_today ?? 0) + ' / ' + cap);
+  set('stApiSub', Math.round((hb.api_calls_today || 0) / Math.max(1, cap) * 100) + '% of daily cap');
+  set('fTrig', hb.triggers_today ?? '—');
+  set('fGate', '—');
+  set('fId', hb.identified_today ?? '—');
+  set('fPub', hb.published_today ?? '—');
+  const errEl = document.getElementById('errPane');
+  if (errEl) errEl.textContent = hb.errors || 'no recent errors';
+}
+
+async function refreshCloud(force) {
+  const rows = await supaSelect('detections?select=*&order=seen_at.desc&limit=200');
+  const dets = rows.map(mapRow);
+  applyReviewQueue(dets);
+  try {
+    const [devs, hbs] = await Promise.all([
+      supaSelect('public_devices?select=*&limit=1'),
+      supaSelect('heartbeats?select=*&order=ts.desc&limit=1'),
+    ]);
+    applyCloudStatus(devs[0], hbs[0]);
+  } catch (e) { /* status is best-effort */ }
+  const fp = dets.length + ':' + (dets[0] ? dets[0].id : 0);
+  if (!force && fp === liveFingerprint) return;
+  const firstLoad = liveFingerprint === '';
+  liveFingerprint = fp;
+  const live = speciesFromDetections(dets);
+  SPECIES.length = 0;
+  live.forEach(s => SPECIES.push(s));
+  renderStatsLists();
+  drawHistograms(firstLoad && currentView === 1);
+  renderAtlas(firstLoad && currentView === 2);
+  renderCollage(firstLoad && currentView === 0);
+}
+
+(async () => {
+  if (SUPABASE.url && SUPABASE.anon) {
+    try {
+      await refreshCloud(true);
+      document.getElementById('demoNote').style.display = 'none';
+      setInterval(() => refreshCloud(false).catch(() => {}), 30000);
+      console.log('birdwatch: live from Supabase');
+      return;
+    } catch (e) {
+      console.log('birdwatch: Supabase unreachable, showing demo (' + e.message + ')');
+    }
+  } else {
+    console.log('birdwatch: demo data (Supabase not configured yet)');
+  }
+})();
+
+/* ============ Boot ============ */
+renderStatsLists();
+drawHistograms(false);
+renderAtlas(false);
+renderCollage(true);
+
+let resizeT = null;
+addEventListener('resize', () => {
+  document.querySelectorAll('.window-pick, .slider, .seg, .atlas-sort').forEach(placePill);
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => { renderCollage(false); drawHistograms(false); }, 160);
+});
+addEventListener('load', () => {
+  document.querySelectorAll('.window-pick, .slider, .seg, .atlas-sort').forEach(placePill);
+});
+</script>
+</body>
+</html>
